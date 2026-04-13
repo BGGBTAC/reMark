@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.config import AppConfig
 from src.ocr.pipeline import OCRPipeline
@@ -55,7 +55,7 @@ class SyncScheduler:
 
     async def _run_cycle(self, auth: AuthManager, ocr_pipeline: OCRPipeline) -> None:
         """Execute one sync cycle with full resource management."""
-        start = datetime.now(timezone.utc)
+        start = datetime.now(UTC)
         logger.info("Sync cycle starting at %s", start.isoformat())
 
         try:

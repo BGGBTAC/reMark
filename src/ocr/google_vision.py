@@ -58,7 +58,7 @@ class GoogleVisionOCR(OCREngine):
         image = vision.Image(content=page_image)
 
         # Use handwriting hint for better recognition
-        hints = [f"en-t-i0-handwrit"] + self._language_hints
+        hints = ["en-t-i0-handwrit"] + self._language_hints
         context = vision.ImageContext(
             language_hints=hints,
         )

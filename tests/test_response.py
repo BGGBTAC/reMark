@@ -9,7 +9,6 @@ from src.response.notebook_writer import NotebookWriter
 from src.response.pdf_generator import ResponseContent, ResponsePDFGenerator, _escape
 from src.response.uploader import ResponseUploader
 
-
 # =====================
 # ResponsePDFGenerator
 # =====================
@@ -143,7 +142,6 @@ class TestNotebookWriter:
 class TestResponseUploader:
     @pytest.mark.asyncio
     async def test_upload_creates_folder_if_missing(self):
-        from src.remarkable.cloud import DocumentMetadata
 
         cloud = AsyncMock()
         cloud.list_items = AsyncMock(return_value=[])  # no existing folders

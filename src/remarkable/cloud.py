@@ -6,8 +6,6 @@ Never call these endpoints directly from other parts of the codebase.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -167,7 +165,8 @@ class RemarkableCloud:
             except (KeyError, ValueError) as e:
                 logger.warning("Skipping malformed entry: %s", e)
 
-        logger.info("Listed %d items from cloud (%d folders)", len(docs), sum(1 for d in docs if d.is_folder))
+        n_folders = sum(1 for d in docs if d.is_folder)
+        logger.info("Listed %d items from cloud (%d folders)", len(docs), n_folders)
         return docs
 
     async def download_document(self, doc_id: str, target_dir: Path) -> Path:
@@ -241,7 +240,10 @@ class RemarkableCloud:
         meta_url = f"{storage}/sync/v2/metadata"
         await self._request("PUT", meta_url, headers=headers, json=[metadata])
 
-        logger.info("Uploaded %s as %s (parent: %s)", source_path.name, doc_id[:8], parent_folder or "root")
+        logger.info(
+            "Uploaded %s as %s (parent: %s)",
+            source_path.name, doc_id[:8], parent_folder or "root",
+        )
         return doc_id
 
     async def create_folder(self, name: str, parent: str = "") -> str:
@@ -348,10 +350,9 @@ class RemarkableCloud:
             return root
 
         # First line is the schema version / generation
-        try:
+        import contextlib
+        with contextlib.suppress(ValueError):
             root.schema_version = int(lines[0])
-        except ValueError:
-            pass
 
         for line in lines[1:]:
             if not line.strip():

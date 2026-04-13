@@ -6,7 +6,7 @@ consistent metadata across all synced notes.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.ocr.pipeline import PageText
 from src.processing.actions import ActionItem
@@ -24,7 +24,7 @@ def generate_frontmatter(
 
     This is the canonical format for all reMarkable-sourced notes.
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Determine which OCR engines were used
     engines = list({r.engine_used for r in ocr_results if r.engine_used != "none"})
@@ -38,7 +38,7 @@ def generate_frontmatter(
 
     fm: dict = {
         "title": notebook.name,
-        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "date": datetime.now(UTC).strftime("%Y-%m-%d"),
         "last_synced": now,
         "source": "remarkable",
         "device": device,
@@ -66,7 +66,7 @@ def update_frontmatter(existing: dict, updates: dict) -> dict:
     """
     merged = dict(existing)
     merged.update(updates)
-    merged["last_synced"] = datetime.now(timezone.utc).isoformat()
+    merged["last_synced"] = datetime.now(UTC).isoformat()
     return merged
 
 

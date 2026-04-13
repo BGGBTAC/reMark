@@ -27,9 +27,12 @@ class GoogleVisionConfig(BaseModel):
     language_hints: list[str] = Field(default_factory=lambda: ["en", "de"])
 
 
+_OCR_ENGINES = Literal["remarkable_builtin", "google_vision", "vlm", "tesseract"]
+
+
 class OCRConfig(BaseModel):
-    primary: Literal["remarkable_builtin", "google_vision", "vlm", "tesseract"] = "remarkable_builtin"
-    fallback: Literal["remarkable_builtin", "google_vision", "vlm", "tesseract", "none"] = "google_vision"
+    primary: _OCR_ENGINES = "remarkable_builtin"
+    fallback: _OCR_ENGINES | Literal["none"] = "google_vision"
     vlm: VLMConfig = Field(default_factory=VLMConfig)
     google_vision: GoogleVisionConfig = Field(default_factory=GoogleVisionConfig)
     confidence_threshold: float = 0.7

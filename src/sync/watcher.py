@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from src.config import AppConfig, WebSocketConfig
+from src.config import AppConfig
 from src.ocr.pipeline import OCRPipeline
 from src.remarkable.auth import AuthManager
 from src.remarkable.cloud import DocumentMetadata, RemarkableCloud
@@ -61,7 +61,6 @@ class RealtimeWatcher:
             ws = RemarkableWebSocket(self._auth, cloud)
             await ws.connect()
 
-            backoff = self._ws_config.reconnect_delay  # reset on successful connect
             logger.info("Real-time watcher connected")
 
             # Start ping task
@@ -119,7 +118,10 @@ class RealtimeWatcher:
         result = await self._engine.process_document(doc, doc_manager, ocr_pipeline)
 
         if result.success:
-            logger.info("Processed %s: %d pages, %d actions", result.doc_name, result.page_count, result.action_count)
+            logger.info(
+                "Processed %s: %d pages, %d actions",
+                result.doc_name, result.page_count, result.action_count,
+            )
         else:
             logger.warning("Failed to process %s: %s", result.doc_name, result.error)
 

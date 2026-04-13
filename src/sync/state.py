@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -109,14 +109,15 @@ class SyncState:
         action_count: int,
     ) -> None:
         """Record a successful sync for a document."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         self.conn.execute(
             """INSERT INTO sync_state
                (doc_id, doc_name, parent_folder, cloud_hash, local_hash,
                 version, last_synced_at, vault_path, ocr_engine,
                 page_count, action_count, status)
-               VALUES (?, ?, ?, ?, ?, COALESCE((SELECT version FROM sync_state WHERE doc_id = ?), 0) + 1,
+               VALUES (?, ?, ?, ?, ?,
+                       COALESCE((SELECT version FROM sync_state WHERE doc_id = ?), 0) + 1,
                        ?, ?, ?, ?, ?, 'synced')
                ON CONFLICT(doc_id) DO UPDATE SET
                  doc_name = excluded.doc_name,
@@ -139,7 +140,7 @@ class SyncState:
 
     def mark_error(self, doc_id: str, error_msg: str) -> None:
         """Record a sync failure. The document will be retried next cycle."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         self.conn.execute(
             """INSERT INTO sync_state (doc_id, status, last_synced_at)
@@ -217,9 +218,10 @@ class SyncState:
 
     def _log(self, action: str, doc_id: str | None, details: str, duration_ms: int = 0) -> None:
         """Write to the sync log."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         self.conn.execute(
-            "INSERT INTO sync_log (timestamp, doc_id, action, details, duration_ms) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO sync_log (timestamp, doc_id, action, details, duration_ms) "
+            "VALUES (?, ?, ?, ?, ?)",
             (now, doc_id, action, details, duration_ms),
         )
         self.conn.commit()

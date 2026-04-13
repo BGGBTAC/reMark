@@ -3,13 +3,11 @@
 import json
 import time
 from base64 import b64encode
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from src.remarkable.auth import AuthError, AuthManager, _parse_jwt_expiry
-
 
 # -- Helpers --
 

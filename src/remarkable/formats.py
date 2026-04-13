@@ -9,13 +9,11 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from io import BytesIO
 from pathlib import Path
 
 from rmscene import RootTextBlock, read_blocks, read_tree
 from rmscene.scene_items import (
     GlyphRange,
-    Group,
     Line,
     ParagraphStyle,
     PenColor,
@@ -343,9 +341,8 @@ def _extract_text_block(text_item: Text) -> TextBlock | None:
     for value in text_item.items.values():
         if isinstance(value, str):
             chars.append(value)
-        elif isinstance(value, int):
-            if value == 0:
-                chars.append("\n")
+        elif isinstance(value, int) and value == 0:
+            chars.append("\n")
 
     text = "".join(chars).strip()
     if not text:
