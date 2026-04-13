@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/BGGBTAC/reMark/actions/workflows/ci.yml/badge.svg)](https://github.com/BGGBTAC/reMark/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/remark-bridge)](https://pypi.org/project/remark-bridge/)
+[![Downloads](https://img.shields.io/pypi/dm/remark-bridge)](https://pypi.org/project/remark-bridge/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -168,6 +169,13 @@ Use pen colors and text patterns to mark up your notes. reMark detects both, so 
 ## Deployment (systemd)
 
 ```bash
+# Install on VPS
+sudo apt install libcairo2-dev
+pip install remark-bridge
+
+# Run setup
+remark-bridge setup
+
 # Copy service files
 sudo cp systemd/remarkable-bridge.service /etc/systemd/system/
 sudo cp systemd/remarkable-bridge.timer /etc/systemd/system/
