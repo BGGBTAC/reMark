@@ -1,5 +1,10 @@
 # reMark
 
+[![CI](https://github.com/BGGBTAC/reMark/actions/workflows/ci.yml/badge.svg)](https://github.com/BGGBTAC/reMark/actions/workflows/ci.yml)
+[![Release](https://github.com/BGGBTAC/reMark/releases/latest/download/remark_bridge-0.1.0-py3-none-any.whl)](https://github.com/BGGBTAC/reMark/releases/latest)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 **Bidirectional sync between reMarkable tablets and an Obsidian knowledge base** with multi-engine OCR, intelligent note processing, and automatic action item extraction.
 
 Write on your reMarkable. reMark handles the rest — your handwritten notes become structured, searchable Markdown in Obsidian, complete with tags, summaries, and extracted action items. Optionally push a response PDF back to your tablet.
@@ -71,18 +76,32 @@ Write on your reMarkable. reMark handles the rest — your handwritten notes bec
 
 ## Installation
 
+### From GitHub Release (recommended)
+
+Download the latest wheel from [Releases](https://github.com/BGGBTAC/reMark/releases/latest):
+
+```bash
+pip install remark_bridge-0.1.0-py3-none-any.whl
+```
+
+### From source
+
 ```bash
 git clone https://github.com/BGGBTAC/reMark.git
 cd reMark
 
-# Create virtual environment and install
-python3.11 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-
-# Or with uv:
-uv sync
+pip install .
 ```
+
+### Directly from GitHub
+
+```bash
+pip install git+https://github.com/BGGBTAC/reMark.git@v0.1.0
+```
+
+> **Note:** reMark requires `libcairo2` for SVG→PNG rendering. On Debian/Ubuntu: `sudo apt install libcairo2-dev`. On macOS: `brew install cairo`.
 
 ## Setup
 
@@ -226,6 +245,23 @@ reMark/
 ├── config.example.yaml
 ├── pyproject.toml
 └── LICENSE
+```
+
+## Development
+
+```bash
+git clone https://github.com/BGGBTAC/reMark.git
+cd reMark
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/ -v
+
+# Lint
+ruff check src/ tests/
 ```
 
 ## License
