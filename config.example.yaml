@@ -1,0 +1,110 @@
+# remark-bridge configuration
+# Copy to config.yaml and adjust to your setup.
+
+remarkable:
+  # Auth: run `remark-bridge setup` to generate device token
+  device_token_path: "~/.remark-bridge/device_token"
+
+  # Folders to sync (empty = all). Use reMarkable folder names.
+  sync_folders:
+    - "Work"
+    - "Personal"
+    - "Reading"
+
+  # Folders to ignore
+  ignore_folders:
+    - "Trash"
+    - "Quick sheets"
+
+  # Where to push response documents on the tablet
+  response_folder: "Responses"
+
+ocr:
+  # Primary engine: "remarkable_builtin" | "google_vision" | "vlm" | "tesseract"
+  primary: "remarkable_builtin"
+
+  # Fallback engine (used when primary returns empty or low confidence)
+  fallback: "google_vision"
+
+  # VLM config (when using "vlm" as primary or fallback)
+  vlm:
+    provider: "anthropic"
+    model: "claude-sonnet-4-20250514"
+    prompt_template: "default"
+
+  # Google Vision config
+  google_vision:
+    credentials_path: "~/.remark-bridge/gcloud-credentials.json"
+    language_hints: ["en", "de"]
+
+  # Minimum confidence threshold (0.0-1.0) before using fallback
+  confidence_threshold: 0.7
+
+processing:
+  # Model for note processing (structuring, actions, tagging)
+  model: "claude-sonnet-4-20250514"
+  api_key_env: "ANTHROPIC_API_KEY"
+
+  # What to extract
+  extract_actions: true
+  extract_tags: true
+  generate_summary: true
+
+  # Action item detection
+  actions:
+    # Pen colors that indicate action items (reMarkable color indices)
+    # 0=black, 1=grey, 2=white, 3=yellow, 4=green, 5=blue, 6=red, 7=pink
+    action_colors: [6]       # red = action item
+    question_colors: [5]     # blue = question/follow-up
+    highlight_colors: [3]    # yellow = important
+
+    # Also detect actions from text patterns regardless of color
+    detect_from_text: true
+
+obsidian:
+  vault_path: "/home/user/obsidian-vault"
+
+  # Folder mapping: reMarkable folder -> Obsidian subfolder
+  folder_map:
+    "Work": "Notes/Work"
+    "Personal": "Notes/Personal"
+    "Reading": "Notes/Reading"
+    "_default": "Inbox"
+
+  # Git sync
+  git:
+    enabled: true
+    remote: "origin"
+    branch: "main"
+    auto_commit: true
+    auto_push: true
+    commit_message_template: "sync: {count} notes from reMarkable ({date})"
+
+sync:
+  # Trigger mode: "realtime" | "scheduled" | "manual" | "all"
+  mode: "all"
+
+  # Scheduled mode: cron expression
+  schedule: "*/15 * * * *"    # every 15 minutes
+
+  # Real-time mode: WebSocket reconnect settings
+  websocket:
+    reconnect_delay: 5
+    max_reconnect_delay: 300
+    ping_interval: 30
+
+  # State database
+  state_db: "~/.remark-bridge/sync_state.db"
+
+  # Push responses back to reMarkable
+  push_responses: true
+  response_format: "pdf"      # "pdf" | "notebook"
+
+  # Process only notebooks modified after this date (ISO format, optional)
+  # after_date: "2025-01-01"
+
+logging:
+  level: "INFO"
+  file: "~/.remark-bridge/bridge.log"
+  max_size_mb: 50
+  backup_count: 5
