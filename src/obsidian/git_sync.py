@@ -7,7 +7,7 @@ Uses GitPython for programmatic git operations.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from git import InvalidGitRepositoryError, Repo
@@ -37,11 +37,11 @@ class GitSync:
         if self._repo is None:
             try:
                 self._repo = Repo(self._vault_path)
-            except InvalidGitRepositoryError:
+            except InvalidGitRepositoryError as e:
                 raise GitSyncError(
                     f"Not a git repository: {self._vault_path}. "
                     "Initialize with `git init` or set git.enabled: false in config."
-                )
+                ) from e
         return self._repo
 
     def is_git_repo(self) -> bool:
@@ -69,7 +69,7 @@ class GitSync:
         self.repo.git.add(A=True)
 
         if not message:
-            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            date_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
             message = self._commit_template.format(count=note_count, date=date_str)
 
         self.repo.index.commit(message)

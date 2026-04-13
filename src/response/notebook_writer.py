@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 from io import BytesIO
-from pathlib import Path
 from uuid import uuid4
 
 from rmscene import simple_text_document, write_blocks
@@ -102,7 +101,7 @@ class NotebookWriter:
         pagedata_lines = ["Blank\n"] * len(pages)
         files[f"{doc_id}.pagedata"] = "".join(pagedata_lines).encode()
 
-        for page_id, page_text in zip(page_ids, pages):
+        for page_id, page_text in zip(page_ids, pages, strict=True):
             rm_bytes = self._generate_rm_page(page_text)
             files[f"{doc_id}/{page_id}.rm"] = rm_bytes
 

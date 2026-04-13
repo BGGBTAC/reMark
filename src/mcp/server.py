@@ -10,10 +10,10 @@ import json
 import logging
 from pathlib import Path
 
-from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Resource, TextContent, Tool
 
+from mcp.server import Server
 from src.config import AppConfig, load_config, resolve_path
 from src.obsidian.vault import ObsidianVault
 from src.sync.state import SyncState

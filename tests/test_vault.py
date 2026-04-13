@@ -1,12 +1,9 @@
 """Tests for Obsidian vault operations, frontmatter, templates, and git sync."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from src.obsidian.frontmatter import generate_frontmatter, update_frontmatter
-from src.obsidian.git_sync import GitSync, GitSyncError
+from src.obsidian.git_sync import GitSync
 from src.obsidian.templates import format_action_index, format_note_content
 from src.obsidian.vault import (
     ObsidianVault,
@@ -18,7 +15,6 @@ from src.ocr.pipeline import PageText
 from src.processing.actions import ActionItem
 from src.processing.summarizer import NoteSummary
 from src.remarkable.formats import Notebook, PageContent, TextBlock
-
 
 # =====================
 # _sanitize_filename
@@ -326,7 +322,7 @@ class TestGitSync:
 
     def test_has_changes(self, tmp_path):
         from git import Repo
-        repo = Repo.init(tmp_path)
+        Repo.init(tmp_path)
 
         gs = GitSync(tmp_path)
         assert not gs.has_changes()

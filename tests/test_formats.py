@@ -2,21 +2,19 @@
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from rmscene import simple_text_document, write_blocks
 from rmscene.scene_items import ParagraphStyle, PenColor
 
-from src.remarkable.documents import DocumentManager, ResolvedDocument
+from src.remarkable.documents import DocumentManager
 from src.remarkable.formats import (
     COLOR_INDEX_MAP,
     INDEX_COLOR_MAP,
     Notebook,
     PageContent,
-    StrokeGroup,
     TextBlock,
-    extract_strokes_by_color,
     extract_typed_text,
     get_builtin_text_conversion,
     parse_notebook,
@@ -272,7 +270,6 @@ class TestDocumentManager:
         assert "Note 2" not in names
 
     def test_read_page_ids_cpages_format(self, tmp_path):
-        from src.remarkable.cloud import RemarkableCloud
 
         doc_id = "doc-pages"
         doc_dir = tmp_path / doc_id

@@ -114,7 +114,7 @@ class OCRPipeline:
 
         results: list[PageText] = []
 
-        for page, page_id in zip(pages, page_ids):
+        for page, page_id in zip(pages, page_ids, strict=False):
             page_result = await self._process_page(
                 page, page_id, doc_dir, doc_id,
                 typed_text.get(page_id, ""),

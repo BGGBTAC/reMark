@@ -2,7 +2,6 @@
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from rmscene import simple_text_document, write_blocks
@@ -17,8 +16,7 @@ from src.ocr.pipeline import (
 )
 from src.ocr.remarkable_builtin import RemarkableBuiltinOCR
 from src.ocr.vlm import _estimate_confidence
-from src.remarkable.formats import PageContent, TextBlock, parse_rm_file
-
+from src.remarkable.formats import parse_rm_file
 
 # -- Helpers --
 

@@ -154,8 +154,8 @@ async def _sync_once(config: AppConfig) -> None:
 
 
 async def _sync_continuous(config: AppConfig) -> None:
-    from src.sync.scheduler import SyncScheduler
     from src.sync.engine import SyncEngine
+    from src.sync.scheduler import SyncScheduler
 
     auth = _get_auth(config)
     engine = SyncEngine(config)

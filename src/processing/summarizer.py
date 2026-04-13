@@ -109,7 +109,7 @@ def _parse_summary_response(raw: str, notebook_name: str) -> NoteSummary:
 
 def _fallback_summary(text: str, notebook_name: str) -> NoteSummary:
     """Generate a basic summary without the API."""
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
 
     # Use first non-heading line as one-liner
     one_line = ""

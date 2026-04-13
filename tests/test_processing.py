@@ -16,7 +16,6 @@ from src.processing.structurer import NoteStructurer, StructuredNote, _extract_t
 from src.processing.summarizer import NoteSummarizer, NoteSummary, _fallback_summary
 from src.processing.tagger import NoteTagger, _extract_keyword_tags, _parse_tag_response
 
-
 # -- Helper to mock Anthropic client --
 
 def mock_anthropic_response(text: str) -> AsyncMock:

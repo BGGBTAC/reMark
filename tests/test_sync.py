@@ -1,13 +1,11 @@
 """Tests for sync state, engine, and scheduler."""
 
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.sync.scheduler import _parse_interval
-from src.sync.state import SyncState, SyncStats
-
+from src.sync.state import SyncState
 
 # =====================
 # SyncState
@@ -217,10 +215,10 @@ class TestSyncEngine:
     @pytest.mark.asyncio
     async def test_sync_once_processes_new_doc(self, tmp_path):
         from src.config import AppConfig
+        from src.ocr.pipeline import PageText
         from src.remarkable.cloud import DocumentMetadata
         from src.remarkable.documents import ResolvedDocument
         from src.remarkable.formats import PageContent, TextBlock
-        from src.ocr.pipeline import PageText
         from src.sync.engine import SyncEngine
 
         config = AppConfig()
@@ -270,13 +268,12 @@ class TestSyncEngine:
 
         with patch("src.sync.engine.parse_notebook", return_value=[
             PageContent(page_id="p1", text_blocks=[TextBlock(text="Test")])
-        ]):
-            with patch("src.sync.engine.anthropic.AsyncAnthropic") as mock_anthropic:
-                mock_client = AsyncMock()
-                mock_client.messages.create = AsyncMock(return_value=mock_response)
-                mock_anthropic.return_value = mock_client
+        ]), patch("src.sync.engine.anthropic.AsyncAnthropic") as mock_anthropic:
+            mock_client = AsyncMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+            mock_anthropic.return_value = mock_client
 
-                report = await engine.sync_once(cloud, doc_manager, ocr_pipeline)
+            report = await engine.sync_once(cloud, doc_manager, ocr_pipeline)
 
         assert report.success_count == 1
         assert report.skipped == 0
