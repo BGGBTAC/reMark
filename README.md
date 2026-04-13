@@ -1,7 +1,7 @@
 # reMark
 
 [![CI](https://github.com/BGGBTAC/reMark/actions/workflows/ci.yml/badge.svg)](https://github.com/BGGBTAC/reMark/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/BGGBTAC/reMark)](https://github.com/BGGBTAC/reMark/releases/latest)
+[![PyPI](https://img.shields.io/pypi/v/remark-bridge)](https://pypi.org/project/remark-bridge/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -76,12 +76,10 @@ Write on your reMarkable. reMark handles the rest — your handwritten notes bec
 
 ## Installation
 
-### From GitHub Release (recommended)
-
-Download the latest wheel from [Releases](https://github.com/BGGBTAC/reMark/releases/latest):
+### From PyPI (recommended)
 
 ```bash
-pip install remark_bridge-0.1.0-py3-none-any.whl
+pip install remark-bridge
 ```
 
 ### From source
@@ -89,16 +87,7 @@ pip install remark_bridge-0.1.0-py3-none-any.whl
 ```bash
 git clone https://github.com/BGGBTAC/reMark.git
 cd reMark
-
-python3 -m venv .venv
-source .venv/bin/activate
 pip install .
-```
-
-### Directly from GitHub
-
-```bash
-pip install git+https://github.com/BGGBTAC/reMark.git@v0.1.0
 ```
 
 > **Note:** reMark requires `libcairo2` for SVG→PNG rendering. On Debian/Ubuntu: `sudo apt install libcairo2-dev`. On macOS: `brew install cairo`.
