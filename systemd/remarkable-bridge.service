@@ -1,0 +1,23 @@
+[Unit]
+Description=reMark Bridge - reMarkable Bidirectional Sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=remark
+WorkingDirectory=/home/remark/reMark
+ExecStart=/home/remark/reMark/.venv/bin/remark-bridge sync
+Restart=on-failure
+RestartSec=30
+Environment=ANTHROPIC_API_KEY=
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/remark
+PrivateTmp=true
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
