@@ -9,13 +9,6 @@ authors = [
     { name = "BGGBTAC" },
 ]
 keywords = ["remarkable", "obsidian", "handwriting", "ocr", "sync"]
-
-[project.urls]
-Homepage = "https://github.com/BGGBTAC/reMark"
-Repository = "https://github.com/BGGBTAC/reMark"
-Issues = "https://github.com/BGGBTAC/reMark/issues"
-Changelog = "https://github.com/BGGBTAC/reMark/releases"
-
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
@@ -50,6 +43,12 @@ dev = [
 
 [project.scripts]
 remark-bridge = "src.main:cli"
+
+[project.urls]
+Homepage = "https://github.com/BGGBTAC/reMark"
+Repository = "https://github.com/BGGBTAC/reMark"
+Issues = "https://github.com/BGGBTAC/reMark/issues"
+Changelog = "https://github.com/BGGBTAC/reMark/releases"
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
