@@ -1,7 +1,7 @@
 # reMark
 
 [![CI](https://github.com/BGGBTAC/reMark/actions/workflows/ci.yml/badge.svg)](https://github.com/BGGBTAC/reMark/actions/workflows/ci.yml)
-[![Release](https://github.com/BGGBTAC/reMark/releases/latest/download/remark_bridge-0.1.0-py3-none-any.whl)](https://github.com/BGGBTAC/reMark/releases/latest)
+[![Release](https://img.shields.io/github/v/release/BGGBTAC/reMark)](https://github.com/BGGBTAC/reMark/releases/latest)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
