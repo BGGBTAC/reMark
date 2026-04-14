@@ -459,3 +459,10 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# MemPalace
+mempalace.yaml
+.mempalace/
+chroma.sqlite3
+chroma/
+entities.json
