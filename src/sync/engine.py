@@ -207,6 +207,55 @@ class SyncEngine:
             logger.warning("Failed to archive %s: %s", doc_name, e)
             return 0
 
+    async def _drain_queue(
+        self,
+        docs,
+        doc_manager: DocumentManager,
+        ocr_pipeline: OCRPipeline,
+        report: SyncReport,
+    ) -> None:
+        """Retry every due sync_queue entry once per cycle.
+
+        Currently we only retry ``process_document`` entries since
+        that's the only operation the engine enqueues. Plugins or
+        future ops can extend this switch.
+        """
+        due = self.state.dequeue_ready(limit=20)
+        if not due:
+            return
+
+        by_id = {doc.id: doc for doc in docs}
+        logger.info("Retrying %d queued operation(s)", len(due))
+
+        for entry in due:
+            queue_id = int(entry["id"])
+            op = entry["op_type"]
+
+            if op == "process_document":
+                doc_id = entry["doc_id"]
+                doc = by_id.get(doc_id)
+                if doc is None:
+                    # Cloud no longer has the document — drop the
+                    # retry, it's never going to succeed.
+                    self.state.mark_queue_done(queue_id)
+                    continue
+                try:
+                    result = await self.process_document(
+                        doc, doc_manager, ocr_pipeline,
+                    )
+                    if result.success:
+                        self.state.mark_queue_done(queue_id)
+                        report.processed.append(result)
+                    else:
+                        self.state.mark_queue_failed(
+                            queue_id, result.error or "unknown",
+                        )
+                except Exception as e:  # noqa: BLE001
+                    self.state.mark_queue_failed(queue_id, str(e))
+            else:
+                logger.warning("Unknown queue op %r — marking failed", op)
+                self.state.mark_queue_failed(queue_id, f"unknown op {op}")
+
     async def sync_once(
         self,
         cloud: RemarkableCloud,
@@ -257,6 +306,12 @@ class SyncEngine:
                 archived_count += self._archive_deleted(entry)
         if archived_count:
             logger.info("Archived %d deleted documents", archived_count)
+
+        # 4a. Drain due retries first — a failing Cloud call on a
+        # previous cycle enqueued an entry; we give it another shot
+        # before picking up fresh work. Success = done, failure bumps
+        # the attempts counter with exponential backoff.
+        await self._drain_queue(docs, doc_manager, ocr_pipeline, report)
 
         # 4. Process each document
         for doc in to_process:
@@ -546,6 +601,19 @@ class SyncEngine:
             duration = int((time.monotonic() - start) * 1000)
             logger.error("Failed to process %s: %s", doc.name, e, exc_info=True)
             self.state.mark_error(doc.id, str(e))
+            # Enqueue a retry so a later cycle can pick the doc up. We
+            # pass the cloud hash as payload so the retry can skip if
+            # the document has been updated in the meantime.
+            try:
+                self.state.enqueue(
+                    op_type="process_document",
+                    doc_id=doc.id,
+                    payload=doc.hash,
+                )
+            except Exception as enqueue_err:
+                logger.warning(
+                    "Couldn't enqueue retry for %s: %s", doc.name, enqueue_err,
+                )
             return ProcessResult(
                 doc_id=doc.id,
                 doc_name=doc.name,

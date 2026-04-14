@@ -25,6 +25,20 @@
   </div>
 </div>
 
+{% if queue_summary and (queue_summary.get('pending', 0) or queue_summary.get('failed', 0)) %}
+<a href="/queue"
+   class="block mb-6 p-4 rounded-lg border
+          {% if queue_summary.get('failed', 0) %}bg-red-50 border-red-200 text-red-900
+          {% else %}bg-amber-50 border-amber-200 text-amber-900{% endif %}">
+  <div class="text-sm">
+    <strong>Sync queue:</strong>
+    {{ queue_summary.get('pending', 0) }} pending,
+    {{ queue_summary.get('failed', 0) }} failed.
+    Click to inspect and retry.
+  </div>
+</a>
+{% endif %}
+
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
   <div class="bg-white rounded-lg shadow-sm p-4">
     <h2 class="font-semibold mb-3">Recent notes</h2>

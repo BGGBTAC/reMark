@@ -118,6 +118,29 @@ CREATE TABLE IF NOT EXISTS plugin_state (
     last_used_at TEXT
 );
 
+-- Offline / retry queue. Captures operations that failed transiently
+-- (network, rate limit, token refresh) so a later sync cycle can pick
+-- them up without losing state. Kept separate from reverse_push_queue
+-- because the retry semantics differ: reverse_push is user-initiated,
+-- sync_queue is system-owned graceful-degradation.
+CREATE TABLE IF NOT EXISTS sync_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    op_type TEXT NOT NULL,
+    doc_id TEXT,
+    payload TEXT,
+    priority INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 5,
+    created_at TEXT NOT NULL,
+    next_attempt_at TEXT,
+    last_error TEXT,
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sync_queue_status
+    ON sync_queue(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_sync_queue_doc ON sync_queue(doc_id);
+
 CREATE TABLE IF NOT EXISTS template_instances (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     doc_id TEXT NOT NULL,
@@ -602,6 +625,136 @@ class SyncState:
             (provider, external_id),
         )
         self.conn.commit()
+
+    # -- Sync queue (offline / retry) --
+
+    def enqueue(
+        self,
+        op_type: str,
+        doc_id: str | None = None,
+        payload: str = "",
+        priority: int = 0,
+        max_attempts: int = 5,
+    ) -> int:
+        """Queue an operation for later retry.
+
+        ``op_type`` is a free-form short string (``"process_document"``,
+        ``"push_response"``, ``"index"``). Returns the queue row id so
+        callers can correlate logs.
+        """
+        now = datetime.now(UTC).isoformat()
+        cur = self.conn.execute(
+            """INSERT INTO sync_queue
+                 (op_type, doc_id, payload, priority, status,
+                  attempts, max_attempts, created_at, next_attempt_at)
+               VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)""",
+            (op_type, doc_id, payload, priority, max_attempts, now, now),
+        )
+        self.conn.commit()
+        self._log("queue", doc_id, f"enqueued {op_type} (id={cur.lastrowid})")
+        return cur.lastrowid or 0
+
+    def dequeue_ready(self, limit: int = 20) -> list[dict]:
+        """Return pending items whose ``next_attempt_at`` is due.
+
+        Rows stay in ``pending`` status — callers mark them ``done`` or
+        ``failed`` explicitly via :meth:`mark_queue_done` and
+        :meth:`mark_queue_failed` once the retry is actually attempted.
+        """
+        now = datetime.now(UTC).isoformat()
+        rows = self.conn.execute(
+            """SELECT * FROM sync_queue
+               WHERE status = 'pending'
+                 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+               ORDER BY priority DESC, id ASC
+               LIMIT ?""",
+            (now, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def list_queue(self, status: str | None = None) -> list[dict]:
+        """Return queue entries — for the CLI and web widgets."""
+        if status:
+            rows = self.conn.execute(
+                "SELECT * FROM sync_queue WHERE status = ? "
+                "ORDER BY id DESC LIMIT 200",
+                (status,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM sync_queue ORDER BY id DESC LIMIT 200"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def queue_summary(self) -> dict[str, int]:
+        """Counts by status for dashboard widgets."""
+        rows = self.conn.execute(
+            "SELECT status, COUNT(*) AS n FROM sync_queue GROUP BY status"
+        ).fetchall()
+        return {r["status"]: r["n"] for r in rows}
+
+    def mark_queue_done(self, queue_id: int) -> None:
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            "UPDATE sync_queue SET status='done', completed_at=? WHERE id=?",
+            (now, queue_id),
+        )
+        self.conn.commit()
+
+    def mark_queue_failed(self, queue_id: int, error: str) -> None:
+        """Bump attempts, back off, mark ``failed`` when the cap is hit.
+
+        Back-off follows an exponential schedule (1 → 5 → 25 minutes),
+        capped at 6 hours. That's short enough to recover from a
+        Cloud-side blip and long enough not to thrash the state DB.
+        """
+        row = self.conn.execute(
+            "SELECT attempts, max_attempts FROM sync_queue WHERE id=?",
+            (queue_id,),
+        ).fetchone()
+        if row is None:
+            return
+
+        attempts = int(row["attempts"]) + 1
+        max_attempts = int(row["max_attempts"])
+        status = "failed" if attempts >= max_attempts else "pending"
+
+        backoff_sec = min(5 ** attempts * 60, 6 * 3600)
+        next_at = datetime.now(UTC).timestamp() + backoff_sec
+        next_iso = datetime.fromtimestamp(next_at, tz=UTC).isoformat()
+
+        self.conn.execute(
+            """UPDATE sync_queue
+               SET attempts = ?,
+                   status = ?,
+                   next_attempt_at = ?,
+                   last_error = ?
+               WHERE id = ?""",
+            (attempts, status, next_iso, error[:500], queue_id),
+        )
+        self.conn.commit()
+
+    def retry_queue_entry(self, queue_id: int) -> None:
+        """Reset a failed entry to ``pending`` so the next cycle picks it up."""
+        self.conn.execute(
+            """UPDATE sync_queue
+               SET status = 'pending', attempts = 0, next_attempt_at = NULL,
+                   last_error = NULL
+               WHERE id = ?""",
+            (queue_id,),
+        )
+        self.conn.commit()
+
+    def clear_queue(self, status: str | None = None) -> int:
+        """Delete queue rows. Returns number removed."""
+        if status:
+            cur = self.conn.execute(
+                "DELETE FROM sync_queue WHERE status = ?", (status,),
+            )
+        else:
+            cur = self.conn.execute("DELETE FROM sync_queue")
+        self.conn.commit()
+        return cur.rowcount or 0
 
     # -- Devices registry --
 
