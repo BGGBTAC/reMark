@@ -27,6 +27,33 @@ STATIC_DIR = Path(__file__).parent / "static"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
+def _strip_mask(values: dict) -> dict:
+    """Drop keys equal to the MASK sentinel — used before model validation."""
+    from src.web.config_writer import MASK
+
+    out = {}
+    for key, value in values.items():
+        if isinstance(value, dict):
+            out[key] = _strip_mask(value)
+        elif value == MASK:
+            continue
+        else:
+            out[key] = value
+    return out
+
+
+def _flatten(values: dict, prefix: str = "") -> dict:
+    """Flatten nested dicts into dotted keys for update_section()."""
+    out = {}
+    for key, value in values.items():
+        dotted = f"{prefix}{key}" if not prefix else f"{prefix}.{key}"
+        if isinstance(value, dict):
+            out.update(_flatten(value, dotted))
+        else:
+            out[dotted] = value
+    return out
+
+
 def _version() -> str:
     """Return the installed package version, falling back if unreleased."""
     try:
@@ -341,29 +368,129 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             request, "devices.html", {"devices": rows},
         )
 
+    # Sections users can edit from the UI. Ordered deliberately to
+    # put the commonly-tweaked ones first.
+    _EDITABLE_SECTIONS = [
+        ("remarkable", "reMarkable", "remarkable"),
+        ("sync", "Sync", "sync"),
+        ("processing", "Processing (AI)", "processing"),
+        ("ocr", "OCR", "ocr"),
+        ("obsidian", "Obsidian vault", "obsidian"),
+        ("search", "Search", "search"),
+        ("microsoft", "Microsoft Graph", "microsoft"),
+        ("reverse_sync", "Reverse sync", "reverse_sync"),
+        ("response", "Responses", "response"),
+        ("templates", "Templates", "templates"),
+        ("plugins", "Plugins", "plugins"),
+        ("web", "Web UI", "web"),
+        ("logging", "Logging", "logging"),
+    ]
+    # Changes to these sections require a daemon restart to take effect.
+    _RESTART_SECTIONS = {"sync", "web", "logging", "remarkable"}
+
+    def _collect_secret_keys(model_cls, prefix: str = "") -> set[str]:
+        from pydantic import BaseModel as _BM
+
+        from src.web.config_writer import is_secret_field
+        keys: set[str] = set()
+        for name, info in model_cls.model_fields.items():
+            dotted = f"{prefix}{name}"
+            anno = info.annotation
+            if isinstance(anno, type) and issubclass(anno, _BM):
+                keys |= _collect_secret_keys(anno, prefix=f"{dotted}.")
+            elif is_secret_field(name):
+                keys.add(dotted)
+        return keys
+
     @app.get("/settings", response_class=HTMLResponse)
-    async def settings_view(request: Request, _=Depends(_auth_check)):
-        redacted = {
-            "remarkable": {"sync_folders": config.remarkable.sync_folders,
-                           "ignore_folders": config.remarkable.ignore_folders},
-            "ocr": {"primary": config.ocr.primary, "fallback": config.ocr.fallback},
-            "processing": {"model": config.processing.model,
-                           "extract_actions": config.processing.extract_actions,
-                           "extract_tags": config.processing.extract_tags},
-            "sync": {"mode": config.sync.mode, "schedule": config.sync.schedule},
-            "search": {"enabled": config.search.enabled,
-                       "backend": config.search.backend},
-            "microsoft": {"enabled": config.microsoft.enabled,
-                          "todo_enabled": config.microsoft.todo_enabled,
-                          "calendar_enabled": config.microsoft.calendar_enabled,
-                          "onenote_enabled": config.microsoft.onenote.enabled,
-                          "teams_enabled": config.microsoft.teams.enabled},
-            "reverse_sync": {"enabled": config.reverse_sync.enabled},
-            "plugins": {"enabled": config.plugins.enabled},
-            "web": {"host": config.web.host, "port": config.web.port},
-        }
+    async def settings_index(request: Request, _=Depends(_auth_check)):
         return templates.TemplateResponse(
-            request, "settings.html", {"settings": redacted},
+            request, "settings.html",
+            {"sections": _EDITABLE_SECTIONS},
+        )
+
+    @app.get("/settings/{section}", response_class=HTMLResponse)
+    async def settings_section(
+        request: Request, section: str, _=Depends(_auth_check),
+    ):
+        from src.config import AppConfig as _AppCfg
+        from src.web.settings_forms import build_form
+
+        if section not in {s[0] for s in _EDITABLE_SECTIONS}:
+            raise HTTPException(status_code=404, detail="Unknown section")
+
+        model_field = _AppCfg.model_fields[section]
+        submodel = model_field.annotation
+        current = getattr(config, section)
+
+        form = build_form(submodel, current, title=section.capitalize())
+        return templates.TemplateResponse(
+            request, "settings_section.html",
+            {
+                "section": section,
+                "form": form,
+                "restart_required": section in _RESTART_SECTIONS,
+                "saved": request.query_params.get("saved") == "1",
+                "error": None,
+            },
+        )
+
+    @app.post("/settings/{section}")
+    async def settings_section_save(
+        request: Request, section: str, _=Depends(_auth_check),
+    ):
+        import os
+
+        from src.config import AppConfig as _AppCfg
+        from src.web.config_writer import update_section
+        from src.web.settings_forms import build_form, parse_form
+
+        if section not in {s[0] for s in _EDITABLE_SECTIONS}:
+            raise HTTPException(status_code=404, detail="Unknown section")
+
+        form_raw = await request.form()
+        raw = {k: v for k, v in form_raw.items()}
+        submodel = _AppCfg.model_fields[section].annotation
+        updates = parse_form(submodel, raw)
+
+        # Validate by instantiating the submodel. Failing fields show
+        # up in a re-rendered form rather than a 500.
+        try:
+            submodel(**_strip_mask(updates))
+        except Exception as exc:
+            current = getattr(config, section)
+            return templates.TemplateResponse(
+                request, "settings_section.html",
+                {
+                    "section": section,
+                    "form": build_form(submodel, current),
+                    "restart_required": section in _RESTART_SECTIONS,
+                    "saved": False,
+                    "error": str(exc),
+                },
+                status_code=400,
+            )
+
+        # Apply to YAML on disk (keeping comments) and leak the change
+        # into the running config so the user sees it immediately.
+        config_path = os.environ.get("REMARK_CONFIG", "config.yaml")
+        secret_keys = _collect_secret_keys(submodel)
+        update_section(config_path, section, _flatten(updates), secret_keys)
+
+        # Mutate the in-memory config for keys that don't require
+        # process restart. Sync/web/logging changes show the banner.
+        if section not in _RESTART_SECTIONS:
+            setattr(config, section, submodel(**_strip_mask(updates)))
+
+        # Audit trail.
+        state = get_state()
+        try:
+            state._log("settings", None, f"updated {section}")
+        finally:
+            state.close()
+
+        return RedirectResponse(
+            url=f"/settings/{section}?saved=1", status_code=303,
         )
 
     # -- PWA: manifest + service worker + push subscribe --
