@@ -239,6 +239,12 @@ search:
   chunk_size: 512        # max characters per chunk
   chunk_overlap: 50      # overlap between consecutive chunks
 
+  # Retrieval mode:
+  #   "hybrid"   — semantic + BM25 fused via RRF (default, best quality)
+  #   "semantic" — embeddings only
+  #   "bm25"     — keyword-only, skips the embedding backend
+  mode: "hybrid"
+
   # Query defaults
   top_k: 5               # number of chunks to return per query
   min_score: 0.3         # minimum similarity score (0..1)
