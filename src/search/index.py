@@ -266,10 +266,16 @@ class VectorIndex:
         if not query.strip():
             return []
 
-        # FTS5 MATCH expects its own mini-language. Quote the query so
-        # users can type natural sentences without worrying about
-        # operator characters (AND, OR, NEAR, parens, quotes).
-        safe_query = '"' + query.replace('"', '""') + '"'
+        # FTS5 MATCH has its own mini-language with operators
+        # (AND/OR/NEAR/parens/quotes). Splitting the user input into
+        # word-shaped tokens and OR-ing individually quoted terms lets
+        # BM25 rank any-term matches while neutralising operator chars.
+        import re
+
+        tokens = [tok for tok in re.findall(r"\w+", query, flags=re.UNICODE) if tok]
+        if not tokens:
+            return []
+        safe_query = " OR ".join(f'"{tok}"' for tok in tokens)
 
         cur = self.conn.execute(
             """SELECT vc.chunk_id, vc.doc_id, vc.vault_path, vc.content,
