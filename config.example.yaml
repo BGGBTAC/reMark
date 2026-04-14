@@ -103,6 +103,80 @@ sync:
   # Process only notebooks modified after this date (ISO format, optional)
   # after_date: "2025-01-01"
 
+response:
+  # Response format: "pdf" (read-only) or "notebook" (editable native .rm)
+  format: "pdf"
+
+  # Automatically trigger response generation on sync
+  auto_trigger: true
+
+  # Trigger criteria (any matching triggers an auto-response)
+  trigger_on_questions: true       # Q: patterns or blue-ink strokes
+  trigger_on_actions: false        # Trigger if any action items found
+
+  # What to include in the response
+  include_analysis: true           # Claude-generated analysis section
+  include_related_notes: true      # Wiki-linked notes from the source
+
+  # Folder on the reMarkable where responses are placed
+  response_folder: "Responses"
+
+microsoft:
+  # Outlook integration: push action items to Microsoft To Do
+  # and deadlines to Outlook Calendar.
+  # Requires app registration at https://entra.microsoft.com.
+  enabled: false
+
+  # From your app registration
+  client_id: ""
+  tenant: "common"   # "common" for personal+work accounts, or a specific tenant GUID
+
+  # Where to cache the OAuth token
+  token_cache_path: "~/.remark-bridge/msal_cache.bin"
+
+  # Microsoft To Do
+  todo_enabled: true
+  todo_list_name: "reMark"
+  todo_create_list: true   # auto-create the list if it doesn't exist
+
+  # Outlook Calendar
+  calendar_enabled: false
+  calendar_id: ""          # empty = default calendar
+
+search:
+  # Semantic search / RAG over synced notes.
+  # When enabled, each synced note is chunked and embedded,
+  # then queryable via `remark-bridge ask` or the MCP ask tool.
+  enabled: false
+
+  # Embedding backend: "voyage", "openai", or "local"
+  #   voyage — best quality, requires VOYAGE_API_KEY
+  #   openai — solid quality, requires OPENAI_API_KEY
+  #   local  — offline via sentence-transformers, no API costs
+  backend: "local"
+
+  # Override default model for the chosen backend (optional)
+  # voyage default: voyage-3.5
+  # openai default: text-embedding-3-small
+  # local default: all-MiniLM-L6-v2
+  model: ""
+
+  # Environment variable name holding the API key (voyage/openai only)
+  # Defaults to VOYAGE_API_KEY or OPENAI_API_KEY depending on backend
+  api_key_env: ""
+
+  # Chunking parameters
+  chunk_size: 512        # max characters per chunk
+  chunk_overlap: 50      # overlap between consecutive chunks
+
+  # Query defaults
+  top_k: 5               # number of chunks to return per query
+  min_score: 0.3         # minimum similarity score (0..1)
+
+  # If true, Claude synthesizes a grounded answer from retrieved chunks
+  synthesize_answer: true
+  synthesis_model: "claude-sonnet-4-20250514"
+
 logging:
   level: "INFO"
   file: "~/.remark-bridge/bridge.log"

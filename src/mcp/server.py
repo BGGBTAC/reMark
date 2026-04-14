@@ -107,6 +107,57 @@ async def list_tools() -> list[Tool]:
                 "required": [],
             },
         ),
+        Tool(
+            name="remarkable_ask",
+            description=(
+                "Ask a natural-language question against your synced notes. "
+                "Uses semantic search to find relevant passages and optionally "
+                "synthesizes a grounded answer with wiki-link citations."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The question to ask",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Number of source chunks to retrieve",
+                        "default": 5,
+                    },
+                    "with_answer": {
+                        "type": "boolean",
+                        "description": "Synthesize an answer from retrieved chunks",
+                        "default": True,
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        Tool(
+            name="remarkable_generate_response",
+            description=(
+                "Generate a response document (PDF or native notebook) for a specific "
+                "synced note and push it back to the reMarkable tablet. Optionally "
+                "uses Claude to answer questions found in the note."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note_path": {
+                        "type": "string",
+                        "description": "Path relative to vault root, e.g. 'Notes/Work/Meeting.md'",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["pdf", "notebook"],
+                        "description": "Response format. Defaults to config.response.format.",
+                    },
+                },
+                "required": ["note_path"],
+            },
+        ),
     ]
 
 
@@ -126,8 +177,151 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return _tool_status(config)
     elif name == "remarkable_list_notes":
         return _tool_list_notes(config, arguments.get("folder"))
+    elif name == "remarkable_ask":
+        return await _tool_ask(
+            config,
+            arguments.get("query", ""),
+            arguments.get("top_k", 5),
+            arguments.get("with_answer", True),
+        )
+    elif name == "remarkable_generate_response":
+        return await _tool_generate_response(
+            config,
+            arguments.get("note_path", ""),
+            arguments.get("format"),
+        )
     else:
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+
+async def _tool_ask(
+    config: AppConfig,
+    query: str,
+    top_k: int,
+    with_answer: bool,
+) -> list[TextContent]:
+    """Run a semantic search with optional synthesis."""
+    if not query:
+        return [TextContent(type="text", text="Missing required parameter: query")]
+
+    if not config.search.enabled:
+        return [TextContent(
+            type="text",
+            text="Search is disabled. Enable in config.yaml under search.enabled: true.",
+        )]
+
+    from src.search.backends import build_backend
+    from src.search.index import VectorIndex
+    from src.search.query import SearchQuery
+    from src.sync.engine import SyncEngine
+
+    try:
+        backend = build_backend(
+            config.search.backend,
+            model=config.search.model,
+            api_key_env=config.search.api_key_env,
+        )
+        index = VectorIndex(
+            db_path=resolve_path(config.sync.state_db),
+            dimension=backend.dimension,
+        )
+
+        if index.stats()["total_chunks"] == 0:
+            return [TextContent(
+                type="text",
+                text="Index is empty. Run `remark-bridge reindex` first.",
+            )]
+
+        client = None
+        synthesize = with_answer and config.search.synthesize_answer
+        if synthesize:
+            engine = SyncEngine(config)
+            client = engine._get_anthropic()
+
+        searcher = SearchQuery(
+            backend=backend,
+            index=index,
+            anthropic_client=client,
+            synthesis_model=config.search.synthesis_model,
+        )
+
+        result = await searcher.ask(
+            query,
+            top_k=top_k,
+            min_score=config.search.min_score,
+            synthesize=synthesize,
+        )
+
+        if not result.has_results:
+            return [TextContent(type="text", text=f"No notes matched '{query}'.")]
+
+        parts = []
+        if result.answer:
+            parts.append("## Answer\n\n" + result.answer)
+
+        parts.append(f"\n## Sources ({len(result.hits)})\n")
+        for i, hit in enumerate(result.hits, 1):
+            from pathlib import Path
+            note_name = Path(hit.vault_path).stem
+            heading = hit.heading_context
+            header = f"**[{i}] [[{note_name}]]** (score: {hit.score:.2f})"
+            if heading:
+                header += f" — {heading}"
+            parts.append(header)
+            preview = hit.content.strip()
+            if len(preview) > 400:
+                preview = preview[:400] + "..."
+            parts.append(f"> {preview}\n")
+
+        return [TextContent(type="text", text="\n".join(parts))]
+
+    except Exception as e:
+        return [TextContent(type="text", text=f"Query failed: {e}")]
+
+
+async def _tool_generate_response(
+    config: AppConfig,
+    note_path: str,
+    format_: str | None,
+) -> list[TextContent]:
+    """Generate a response document and push it to reMarkable."""
+    from src.remarkable.auth import AuthManager
+    from src.remarkable.cloud import RemarkableCloud
+    from src.sync.engine import SyncEngine
+
+    if not note_path:
+        return [TextContent(type="text", text="Missing required parameter: note_path")]
+
+    if format_ in ("pdf", "notebook"):
+        config.response.format = format_
+
+    vault = _get_vault(config)
+    full_path = vault.path / note_path
+    if not full_path.exists():
+        return [TextContent(type="text", text=f"Note not found: {note_path}")]
+
+    try:
+        auth = AuthManager(resolve_path(config.remarkable.device_token_path))
+        engine = SyncEngine(config)
+
+        async with RemarkableCloud(auth) as cloud:
+            success = await engine.generate_response_for_note(full_path, cloud)
+
+        if success:
+            return [TextContent(
+                type="text",
+                text=(
+                    f"Response pushed to reMarkable folder "
+                    f"'{config.response.response_folder}' for '{note_path}'."
+                ),
+            )]
+        return [TextContent(
+            type="text",
+            text=f"Response generation failed for '{note_path}' (see server logs).",
+        )]
+
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
 
 
 async def _tool_sync_now(config: AppConfig) -> list[TextContent]:

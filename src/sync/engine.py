@@ -81,6 +81,7 @@ class SyncEngine:
         self._vault: ObsidianVault | None = None
         self._git: GitSync | None = None
         self._anthropic: anthropic.AsyncAnthropic | None = None
+        self._indexer = None  # Lazy — only built if search is enabled
 
     @property
     def state(self) -> SyncState:
@@ -112,8 +113,75 @@ class SyncEngine:
         if self._anthropic is None:
             import os
             api_key = os.environ.get(self._config.processing.api_key_env, "")
-            self._anthropic = anthropic.AsyncAnthropic(api_key=api_key)
+            client = anthropic.AsyncAnthropic(api_key=api_key)
+            self._anthropic = _wrap_client_for_usage_tracking(
+                client, self._config.processing.model, self.state,
+            )
         return self._anthropic
+
+    def _get_indexer(self):
+        """Lazy-build the search indexer. Returns None if search is disabled."""
+        if self._indexer is not None:
+            return self._indexer
+        if not self._config.search.enabled:
+            return None
+
+        try:
+            from src.search.backends import build_backend
+            from src.search.index import VectorIndex
+            from src.search.indexer import Indexer
+
+            backend = build_backend(
+                self._config.search.backend,
+                model=self._config.search.model,
+                api_key_env=self._config.search.api_key_env,
+            )
+            index = VectorIndex(
+                db_path=resolve_path(self._config.sync.state_db),
+                dimension=backend.dimension,
+            )
+            self._indexer = Indexer(
+                backend=backend,
+                index=index,
+                vault=self.vault,
+                chunk_size=self._config.search.chunk_size,
+                chunk_overlap=self._config.search.chunk_overlap,
+            )
+            return self._indexer
+        except Exception as e:
+            logger.warning("Failed to initialize search indexer: %s", e)
+            return None
+
+    def _archive_deleted(self, state_entry: dict) -> int:
+        """Archive a note whose source document was deleted on reMarkable.
+
+        Moves the vault file to Archive/, removes search index entries,
+        and updates state. Returns 1 if archived, 0 otherwise.
+        """
+        doc_id = state_entry.get("doc_id", "")
+        vault_path_str = state_entry.get("vault_path", "")
+        doc_name = state_entry.get("doc_name") or doc_id
+
+        if not vault_path_str:
+            self.state.mark_archived(doc_id)
+            return 1
+
+        try:
+            path = Path(vault_path_str)
+            if path.exists():
+                self.vault.archive_note(path)
+
+            # Remove from search index if enabled
+            indexer = self._get_indexer()
+            if indexer:
+                indexer.remove_document(doc_id)
+
+            self.state.mark_archived(doc_id)
+            logger.info("Archived deleted document: %s", doc_name)
+            return 1
+        except Exception as e:
+            logger.warning("Failed to archive %s: %s", doc_name, e)
+            return 0
 
     async def sync_once(
         self,
@@ -148,14 +216,23 @@ class SyncEngine:
             len(docs), len(to_process), report.skipped,
         )
 
-        # 3. Process each document
+        # 3. Detect deletions — docs in state but no longer on Cloud
+        cloud_ids = {doc.id for doc in docs if not doc.is_folder}
+        archived_count = 0
+        for entry in self.state.list_active_docs():
+            if entry["doc_id"] not in cloud_ids:
+                archived_count += self._archive_deleted(entry)
+        if archived_count:
+            logger.info("Archived %d deleted documents", archived_count)
+
+        # 4. Process each document
         for doc in to_process:
             result = await self.process_document(doc, doc_manager, ocr_pipeline)
             report.processed.append(result)
             if not result.success:
                 report.errors += 1
 
-        # 4. Push pending responses
+        # 5. Push pending responses
         if self._config.sync.push_responses:
             await self.push_pending_responses(cloud)
 
@@ -269,6 +346,29 @@ class SyncEngine:
             if actions:
                 self.vault.write_action_items(actions, notebook.name, vault_path)
 
+            # Index for semantic search
+            indexer = self._get_indexer()
+            if indexer:
+                try:
+                    await indexer.index_note(doc.id, vault_path, content)
+                except Exception as e:
+                    logger.warning("Indexing failed for %s: %s", doc.name, e)
+
+            # Microsoft integration: push action items to To Do / Calendar
+            if actions and self._config.microsoft.enabled:
+                from src.integrations.microsoft.service import MicrosoftService
+                ms_service = MicrosoftService(self._config.microsoft)
+                if ms_service.enabled:
+                    ms_result = await ms_service.sync_actions(actions, source_note=notebook.name)
+                    for task_id in ms_result.tasks_created:
+                        self.state.record_external_link(
+                            doc.id, "microsoft_todo", "task", task_id,
+                        )
+                    for event_id in ms_result.events_created:
+                        self.state.record_external_link(
+                            doc.id, "microsoft_calendar", "event", event_id,
+                        )
+
             # Update state
             engines = list({r.engine_used for r in ocr_results if r.engine_used != "none"})
             self.state.mark_synced(
@@ -281,6 +381,26 @@ class SyncEngine:
                 page_count=len(pages),
                 action_count=len(actions),
             )
+
+            # Evaluate auto-response trigger
+            if self._config.sync.push_responses and self._config.response.auto_trigger:
+                from src.response.generator import should_auto_trigger
+
+                question_colors = self._config.processing.actions.question_colors
+                has_blue_questions = False
+                if question_colors:
+                    color_groups = extract_strokes_by_color(
+                        resolved.local_dir, doc.id, resolved.page_ids, question_colors,
+                    )
+                    has_blue_questions = any(color_groups.values())
+                if should_auto_trigger(
+                    self._config.response,
+                    structured.content_md,
+                    has_color_questions=has_blue_questions,
+                    action_count=len(actions),
+                ):
+                    self.state.mark_response_pending(doc.id)
+                    logger.info("Auto-trigger: queued response for %s", doc.name)
 
             # Cleanup downloaded files
             doc_manager.cleanup(doc.id)
@@ -315,33 +435,138 @@ class SyncEngine:
             )
 
     async def push_pending_responses(self, cloud: RemarkableCloud) -> int:
-        """Push pending response PDFs back to reMarkable.
+        """Generate and push pending responses back to reMarkable.
 
-        Returns the number of responses pushed.
+        Walks the state table for documents marked 'pending_response',
+        builds a response document (PDF or native notebook based on
+        config.response.format), uploads it to the configured response
+        folder on the tablet, and updates the state on success.
+
+        Returns the number of responses successfully pushed.
         """
+        from src.response.generator import ResponseGenerator
+        from src.response.uploader import ResponseUploader
+
         pending = self.state.get_pending_responses()
         if not pending:
             return 0
 
+        response_config = self._config.response
+        generator = ResponseGenerator(
+            vault=self.vault,
+            config=response_config,
+            anthropic_client=self._get_anthropic() if response_config.include_analysis else None,
+            model=self._config.processing.model,
+        )
+        uploader = ResponseUploader(cloud, response_folder=response_config.response_folder)
+
         pushed = 0
         for entry in pending:
+            doc_id = entry["doc_id"]
+            doc_name = entry.get("doc_name") or doc_id
+            vault_path_str = entry.get("vault_path")
+
+            if not vault_path_str:
+                logger.warning("Skipping response for %s: no vault path in state", doc_id[:8])
+                continue
+
             try:
-                vault_path = Path(entry["vault_path"])
-                result = self.vault.read_note(vault_path)
-                if result is None:
+                response = await generator.generate_from_note(Path(vault_path_str))
+                if response is None:
+                    logger.info("No response content for %s, skipping", doc_name)
+                    self.state.mark_response_sent(doc_id)
                     continue
 
-                fm, content = result
-                if fm.get("status") != "response_ready":
+                if response.format == "pdf" and response.pdf_bytes:
+                    await uploader.upload_pdf(response.pdf_bytes, response.title)
+                elif response.format == "notebook" and response.notebook_files:
+                    await uploader.upload_notebook(response.notebook_files, response.title)
+                else:
+                    logger.warning("Response for %s has no payload, skipping", doc_name)
                     continue
 
-                # Response push is implemented in Phase 7
-                # For now, just mark as sent
-                logger.info("Response push placeholder for %s", entry["doc_name"])
-                self.state.mark_response_sent(entry["doc_id"])
+                self.state.mark_response_sent(doc_id)
                 pushed += 1
+                logger.info(
+                    "Pushed response for %s (%d questions, %d actions)",
+                    doc_name, response.question_count, response.action_count,
+                )
 
             except Exception as e:
-                logger.warning("Failed to push response for %s: %s", entry["doc_id"][:8], e)
+                logger.warning(
+                    "Failed to push response for %s: %s",
+                    doc_id[:8], e, exc_info=True,
+                )
 
         return pushed
+
+    async def generate_response_for_note(
+        self, note_path: Path, cloud: RemarkableCloud,
+    ) -> bool:
+        """Manually generate and push a response for a specific vault note.
+
+        Used by the CLI 'respond' command and the MCP 'generate_response' tool.
+        Returns True if the response was successfully uploaded.
+        """
+        from src.response.generator import ResponseGenerator
+        from src.response.uploader import ResponseUploader
+
+        response_config = self._config.response
+        generator = ResponseGenerator(
+            vault=self.vault,
+            config=response_config,
+            anthropic_client=self._get_anthropic() if response_config.include_analysis else None,
+            model=self._config.processing.model,
+        )
+        uploader = ResponseUploader(cloud, response_folder=response_config.response_folder)
+
+        response = await generator.generate_from_note(note_path)
+        if response is None:
+            return False
+
+        try:
+            if response.format == "pdf" and response.pdf_bytes:
+                await uploader.upload_pdf(response.pdf_bytes, response.title)
+            elif response.format == "notebook" and response.notebook_files:
+                await uploader.upload_notebook(response.notebook_files, response.title)
+            else:
+                return False
+            logger.info("Generated response for %s", note_path.name)
+            return True
+        except Exception as e:
+            logger.error("Response upload failed for %s: %s", note_path.name, e)
+            return False
+
+
+def _wrap_client_for_usage_tracking(
+    client: anthropic.AsyncAnthropic,
+    default_model: str,
+    state,
+) -> anthropic.AsyncAnthropic:
+    """Wrap an Anthropic client so every messages.create() call logs usage.
+
+    We monkey-patch the bound method on the messages resource — it's the
+    least invasive way to track usage across all processors without
+    passing the state through every class.
+    """
+    import contextlib
+
+    from src.processing.usage import log_anthropic_response
+
+    original_create = client.messages.create
+
+    async def tracked_create(*args, **kwargs):
+        response = await original_create(*args, **kwargs)
+        model = kwargs.get("model", default_model)
+        operation = kwargs.get("_operation", "messages.create")
+        with contextlib.suppress(Exception):
+            log_anthropic_response(
+                state,
+                response,
+                model=model,
+                operation=operation,
+            )
+        return response
+
+    client.messages.create = tracked_create
+    return client

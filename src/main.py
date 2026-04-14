@@ -231,6 +231,23 @@ def status(ctx: click.Context) -> None:
                 click.echo(f"  Ahead:       {gs['ahead']}")
                 click.echo(f"  Last commit: {gs['last_commit_msg'] or 'none'}")
 
+        # API usage
+        usage = state.get_api_usage_summary(days=30)
+        if usage["total_calls"] > 0:
+            click.echo(
+                f"\nAPI usage (last 30 days):   "
+                f"{usage['total_calls']} calls, "
+                f"${usage['total_cost_usd']:.2f}"
+            )
+            for provider, stats in usage["providers"].items():
+                tokens = stats["input_tokens"] + stats["output_tokens"]
+                click.echo(
+                    f"  {provider}:{'':<12}"
+                    f"{stats['calls']} calls, "
+                    f"{tokens} tokens, "
+                    f"${stats['cost_usd']:.2f}"
+                )
+
     except Exception as e:
         click.echo(f"Error reading status: {e}")
     finally:
@@ -248,6 +265,60 @@ def process(ctx: click.Context, notebook_name: str) -> None:
 
     click.echo(f"Processing: {notebook_name}")
     asyncio.run(_process_single(config, notebook_name))
+
+
+@cli.command()
+@click.argument("notebook_name")
+@click.option(
+    "--format", "format_",
+    type=click.Choice(["pdf", "notebook"]),
+    default=None,
+    help="Response format. Defaults to config.response.format.",
+)
+@click.pass_context
+def respond(ctx: click.Context, notebook_name: str, format_: str | None) -> None:
+    """Generate and push a response back to the tablet for a specific note."""
+    config = ctx.obj["config"]
+    _setup_logging(config)
+
+    if format_:
+        config.response.format = format_
+
+    click.echo(f"Generating response for: {notebook_name}")
+    asyncio.run(_respond(config, notebook_name))
+
+
+async def _respond(config: AppConfig, notebook_name: str) -> None:
+    from pathlib import Path
+
+    from src.remarkable.cloud import RemarkableCloud
+    from src.sync.engine import SyncEngine
+
+    engine = SyncEngine(config)
+    auth = _get_auth(config)
+
+    note_path = None
+    vault_path = Path(config.obsidian.vault_path).expanduser()
+    for md_file in vault_path.rglob("*.md"):
+        result = engine.vault.read_note(md_file)
+        if result is None:
+            continue
+        fm, _ = result
+        if fm.get("title") == notebook_name or md_file.stem == notebook_name:
+            note_path = md_file
+            break
+
+    if note_path is None:
+        click.echo(f"Note '{notebook_name}' not found in vault.")
+        return
+
+    async with RemarkableCloud(auth) as cloud:
+        success = await engine.generate_response_for_note(note_path, cloud)
+
+    if success:
+        click.echo(f"Response uploaded to reMarkable '{config.response.response_folder}' folder.")
+    else:
+        click.echo("Response generation failed (see logs).")
 
 
 async def _process_single(config: AppConfig, notebook_name: str) -> None:
@@ -293,6 +364,346 @@ def push(ctx: click.Context, file_path: str, folder: str) -> None:
     _setup_logging(config)
 
     asyncio.run(_push_file(config, Path(file_path), folder))
+
+
+@cli.command()
+@click.argument("query")
+@click.option("--top-k", "-k", default=5, help="Number of results to return")
+@click.option("--with-answer/--no-answer", default=True,
+              help="Synthesize a grounded answer from hits")
+@click.pass_context
+def ask(ctx: click.Context, query: str, top_k: int, with_answer: bool) -> None:
+    """Ask a natural-language question against your synced notes."""
+    config = ctx.obj["config"]
+    _setup_logging(config)
+
+    if not config.search.enabled:
+        click.echo("Search is disabled. Enable it in config.yaml under `search.enabled: true`.")
+        return
+
+    asyncio.run(_ask(config, query, top_k, with_answer))
+
+
+async def _ask(config: AppConfig, query: str, top_k: int, with_answer: bool) -> None:
+    from src.search.backends import build_backend
+    from src.search.index import VectorIndex
+    from src.search.query import SearchQuery
+    from src.sync.engine import SyncEngine
+
+    backend = build_backend(
+        config.search.backend,
+        model=config.search.model,
+        api_key_env=config.search.api_key_env,
+    )
+    index = VectorIndex(
+        db_path=resolve_path(config.sync.state_db),
+        dimension=backend.dimension,
+    )
+
+    stats = index.stats()
+    if stats["total_chunks"] == 0:
+        click.echo("Index is empty. Run `remark-bridge reindex` first.")
+        return
+
+    client = None
+    synthesize = with_answer and config.search.synthesize_answer
+    if synthesize:
+        engine = SyncEngine(config)
+        client = engine._get_anthropic()
+
+    searcher = SearchQuery(
+        backend=backend,
+        index=index,
+        anthropic_client=client,
+        synthesis_model=config.search.synthesis_model,
+    )
+
+    result = await searcher.ask(
+        query,
+        top_k=top_k,
+        min_score=config.search.min_score,
+        synthesize=synthesize,
+    )
+
+    if not result.has_results:
+        click.echo(f"No notes matched '{query}'.")
+        return
+
+    if result.answer:
+        click.echo("\n=== Answer ===\n")
+        click.echo(result.answer)
+        click.echo()
+
+    click.echo(f"=== Top {len(result.hits)} sources ===\n")
+    for i, hit in enumerate(result.hits, 1):
+        note_name = Path(hit.vault_path).stem
+        heading = hit.heading_context
+        header = f"[{i}] {note_name} (score: {hit.score:.2f})"
+        if heading:
+            header += f" — {heading}"
+        click.echo(header)
+        preview = hit.content.replace("\n", " ").strip()
+        if len(preview) > 200:
+            preview = preview[:200] + "..."
+        click.echo(f"    {preview}\n")
+
+
+@cli.command()
+@click.pass_context
+def doctor(ctx: click.Context) -> None:
+    """Run health checks on the reMark installation."""
+    config = ctx.obj["config"]
+    _run_doctor(config)
+
+
+def _run_doctor(config: AppConfig) -> None:
+    import os
+    import shutil
+
+    from src.remarkable.auth import AuthManager
+
+    checks: list[tuple[str, bool, str]] = []
+
+    # Config loaded
+    checks.append(("Config loaded", True, f"v{_version()}"))
+
+    # Vault path
+    vault_path = Path(config.obsidian.vault_path).expanduser()
+    checks.append((
+        "Vault directory",
+        vault_path.exists(),
+        str(vault_path) if vault_path.exists() else f"missing: {vault_path}",
+    ))
+
+    # Vault git repo
+    if config.obsidian.git.enabled:
+        from src.obsidian.git_sync import GitSync
+        try:
+            gs = GitSync(str(vault_path))
+            is_repo = gs.is_git_repo()
+            checks.append((
+                "Vault is git repo",
+                is_repo,
+                "ok" if is_repo else "run 'git init' in vault",
+            ))
+        except Exception as e:
+            checks.append(("Vault is git repo", False, str(e)))
+
+    # Device token
+    token_path = resolve_path(config.remarkable.device_token_path)
+    if token_path.exists():
+        token = token_path.read_text().strip()
+        if token:
+            try:
+                auth = AuthManager(token_path)
+                user_token_unused = auth.device_token  # noqa: F841
+                checks.append(("reMarkable device token", True, str(token_path)))
+            except Exception as e:
+                checks.append(("reMarkable device token", False, str(e)))
+        else:
+            checks.append(("reMarkable device token", False, "empty file"))
+    else:
+        checks.append((
+            "reMarkable device token",
+            False,
+            "run 'remark-bridge setup'",
+        ))
+
+    # Anthropic API key
+    env_var = config.processing.api_key_env
+    api_key = os.environ.get(env_var, "")
+    checks.append((
+        f"Anthropic API key ({env_var})",
+        bool(api_key),
+        "set" if api_key else "not set",
+    ))
+
+    # State DB
+    state_db = resolve_path(config.sync.state_db)
+    state_db_exists = state_db.exists() or state_db.parent.exists()
+    checks.append((
+        "State database location",
+        state_db_exists,
+        str(state_db) if state_db_exists else "parent dir missing",
+    ))
+
+    # Cairo
+    cairo_ok = False
+    try:
+        import cairocffi  # noqa: F401
+        cairo_ok = True
+    except (ImportError, OSError):
+        pass
+    checks.append((
+        "libcairo2 (for SVG→PNG)",
+        cairo_ok,
+        "loaded" if cairo_ok else "install libcairo2-dev",
+    ))
+
+    # Search backend (if enabled)
+    if config.search.enabled:
+        try:
+            from src.search.backends import build_backend
+            backend = build_backend(
+                config.search.backend,
+                model=config.search.model,
+                api_key_env=config.search.api_key_env,
+            )
+            checks.append((
+                f"Search backend '{backend.name}'",
+                True,
+                f"dim={backend.dimension}",
+            ))
+        except Exception as e:
+            checks.append((f"Search backend '{config.search.backend}'", False, str(e)))
+
+    # Microsoft (if enabled)
+    if config.microsoft.enabled:
+        if not config.microsoft.client_id:
+            checks.append(("Microsoft client_id", False, "not set in config.yaml"))
+        else:
+            cache_path = Path(config.microsoft.token_cache_path).expanduser()
+            if cache_path.exists():
+                checks.append((
+                    "Microsoft token cache",
+                    True,
+                    str(cache_path),
+                ))
+            else:
+                checks.append((
+                    "Microsoft token cache",
+                    False,
+                    "run 'remark-bridge setup-microsoft'",
+                ))
+
+    # Disk space
+    vault_parent = vault_path.parent if vault_path.exists() else vault_path.parent.parent
+    if vault_parent.exists():
+        free_bytes = shutil.disk_usage(vault_parent).free
+        free_gb = free_bytes / (1024 ** 3)
+        checks.append((
+            "Free disk space",
+            free_gb > 1.0,
+            f"{free_gb:.1f} GB free",
+        ))
+
+    # Print report
+    click.echo("\n=== reMark Doctor ===\n")
+    longest = max(len(name) for name, _, _ in checks)
+    fail_count = 0
+    for name, ok, detail in checks:
+        marker = "✓" if ok else "✗"
+        color = "green" if ok else "red"
+        name_padded = name.ljust(longest)
+        click.secho(f"  {marker} ", fg=color, nl=False)
+        click.echo(f"{name_padded}  {detail}")
+        if not ok:
+            fail_count += 1
+
+    click.echo()
+    if fail_count == 0:
+        click.secho(f"All {len(checks)} checks passed.", fg="green")
+    else:
+        click.secho(
+            f"{fail_count}/{len(checks)} checks failed.",
+            fg="yellow",
+        )
+
+
+def _version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("remark-bridge")
+    except Exception:
+        return "dev"
+
+
+@cli.command(name="setup-microsoft")
+@click.pass_context
+def setup_microsoft(ctx: click.Context) -> None:
+    """Authenticate with Microsoft Graph for Outlook integration."""
+    config = ctx.obj["config"]
+    _setup_logging(config)
+
+    if not config.microsoft.client_id:
+        click.echo(
+            "microsoft.client_id is not set in config.yaml.\n"
+            "Register an app at https://entra.microsoft.com and add the client ID."
+        )
+        return
+
+    from src.integrations.microsoft.auth import MicrosoftAuth, MicrosoftAuthError
+
+    auth = MicrosoftAuth(
+        client_id=config.microsoft.client_id,
+        tenant=config.microsoft.tenant,
+        token_cache_path=config.microsoft.token_cache_path,
+    )
+
+    try:
+        flow = auth.start_device_flow()
+    except MicrosoftAuthError as e:
+        click.echo(f"Failed to start device flow: {e}")
+        return
+
+    click.echo("\nTo authenticate Microsoft:")
+    click.echo(f"  1. Go to: {flow['verification_uri']}")
+    click.echo(f"  2. Enter code: {flow['user_code']}")
+    click.echo("\nWaiting for authorization...\n")
+
+    try:
+        auth.complete_device_flow(flow)
+        click.echo("Microsoft authentication successful.")
+        click.echo(f"Token cached at: {config.microsoft.token_cache_path}")
+    except MicrosoftAuthError as e:
+        click.echo(f"Authorization failed: {e}")
+
+
+@cli.command()
+@click.pass_context
+def reindex(ctx: click.Context) -> None:
+    """Rebuild the semantic search index from the vault."""
+    config = ctx.obj["config"]
+    _setup_logging(config)
+
+    if not config.search.enabled:
+        click.echo("Search is disabled. Enable it in config.yaml under `search.enabled: true`.")
+        return
+
+    click.echo(f"Reindexing vault with backend '{config.search.backend}'...")
+    asyncio.run(_reindex(config))
+
+
+async def _reindex(config: AppConfig) -> None:
+    from src.search.backends import build_backend
+    from src.search.index import VectorIndex
+    from src.search.indexer import Indexer
+    from src.sync.engine import SyncEngine
+
+    backend = build_backend(
+        config.search.backend,
+        model=config.search.model,
+        api_key_env=config.search.api_key_env,
+    )
+    index = VectorIndex(
+        db_path=resolve_path(config.sync.state_db),
+        dimension=backend.dimension,
+    )
+    engine = SyncEngine(config)
+
+    indexer = Indexer(
+        backend=backend,
+        index=index,
+        vault=engine.vault,
+        chunk_size=config.search.chunk_size,
+        chunk_overlap=config.search.chunk_overlap,
+    )
+
+    report = await indexer.reindex_vault()
+    click.echo(
+        f"Indexed {report['notes']} notes → {report['chunks']} chunks "
+        f"(backend: {report['backend']}, dim: {report['dimension']})"
+    )
 
 
 async def _push_file(config: AppConfig, file_path: Path, folder: str) -> None:

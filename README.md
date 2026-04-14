@@ -19,10 +19,15 @@ Write on your reMarkable. reMark handles the rest — your handwritten notes bec
 - **Action item extraction** — detects tasks, questions, and follow-ups from both text patterns and pen color annotations
 - **Auto-tagging** — categorizes notes based on content
 - **Obsidian vault integration** — writes notes with full YAML frontmatter, wiki-links, and Git sync
-- **Response push** — generates styled PDFs and pushes them back to your reMarkable
+- **Response push** — auto-generates PDFs or native reMarkable notebooks that answer questions found in your notes, pushes them back to the tablet
+- **Semantic search (RAG)** — embed the entire vault and query it with natural language (`remark-bridge ask`) — backends for Voyage, OpenAI, or local sentence-transformers
+- **Microsoft Outlook integration** — action items flow into Microsoft To Do, deadlines become Outlook Calendar events
+- **Deletion-aware** — notes deleted on the tablet are archived in the vault automatically
+- **Cost tracking** — built-in token and cost accounting for every API call
 - **Real-time sync** — WebSocket-based live notifications or configurable cron schedule
 - **Color-aware** — uses reMarkable Paper Pro's color ink for semantic marking (red = action, blue = question, yellow = highlight)
 - **MCP server** — interact with your notes directly from Claude Desktop or Claude Code
+- **Health check** — `remark-bridge doctor` verifies config, auth, vault, API keys, and system deps
 - **Idempotent** — SQLite state tracking ensures notes are never processed twice
 
 ## Architecture
@@ -120,6 +125,9 @@ Key sections:
 | `processing` | Model selection, what to extract (actions, tags, summaries) |
 | `obsidian` | Vault path, folder mapping, Git sync settings |
 | `sync` | Trigger mode (realtime/scheduled/manual), WebSocket config |
+| `response` | Response format (PDF/notebook), auto-trigger rules |
+| `search` | Semantic search — backend, chunking, synthesis |
+| `microsoft` | Outlook Tasks + Calendar integration |
 
 See [config.example.yaml](config.example.yaml) for the full reference with comments.
 
@@ -138,10 +146,25 @@ remark-bridge watch
 # Process a specific notebook
 remark-bridge process "Meeting Notes 2026-04-13"
 
+# Push a generated response back to the tablet
+remark-bridge respond "Meeting Notes 2026-04-13" --format pdf
+
+# Ask your vault a question (semantic search)
+remark-bridge ask "what did I decide about the API migration"
+
+# Rebuild the semantic search index
+remark-bridge reindex
+
+# Authenticate Microsoft for Outlook/To Do
+remark-bridge setup-microsoft
+
+# Run a health check
+remark-bridge doctor
+
 # Upload a PDF to your reMarkable
 remark-bridge push report.pdf --folder "Work"
 
-# Check sync status
+# Check sync status + API cost summary
 remark-bridge status
 
 # Start MCP server (for Claude Desktop / Claude Code)
@@ -150,6 +173,20 @@ remark-bridge serve
 # One-time import of all existing notebooks
 remark-bridge migrate
 ```
+
+### Semantic Search
+
+Enable semantic search by setting `search.enabled: true` in `config.yaml`. Three backends are supported:
+
+- **local** (default) — offline via `sentence-transformers`, no API costs. Install with `pip install 'remark-bridge[local-embeddings]'`.
+- **voyage** — highest quality, requires `VOYAGE_API_KEY`. Install with `pip install 'remark-bridge[voyage]'`.
+- **openai** — solid quality, requires `OPENAI_API_KEY`. Install with `pip install 'remark-bridge[openai]'`.
+
+Embeddings are stored in the same SQLite database as the sync state (via `sqlite-vec`), so no extra infrastructure is needed.
+
+### Microsoft Outlook Integration
+
+Register an app at [entra.microsoft.com](https://entra.microsoft.com) (Public client, redirect URI `https://login.microsoftonline.com/common/oauth2/nativeclient`), add its client ID to `config.yaml` under `microsoft.client_id`, and run `remark-bridge setup-microsoft`. Action items will flow into Microsoft To Do; items with deadlines become Outlook Calendar events.
 
 ## reMarkable Marking Conventions
 
