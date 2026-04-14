@@ -137,6 +137,17 @@ class TeamsConfig(BaseModel):
     meeting_correlation: bool = True       # link meeting notes to Outlook events
 
 
+class NotionConfig(BaseModel):
+    """Notion mirror via an internal integration token."""
+    enabled: bool = False
+    integration_token_env: str = "NOTION_TOKEN"
+    # ID of the Notion page under which synced notes become children.
+    # Required; leaving it blank disables the push without erroring.
+    vault_mirror_page_id: str = ""
+    # Optional: ID of a Notion database to pull Actions from (future).
+    tasks_database_id: str = ""
+
+
 class MicrosoftConfig(BaseModel):
     """Microsoft Graph integration (Outlook Tasks + Calendar + OneNote + Teams)."""
     enabled: bool = False
@@ -255,6 +266,7 @@ class AppConfig(BaseModel):
     response: ResponseConfig = Field(default_factory=ResponseConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     microsoft: MicrosoftConfig = Field(default_factory=MicrosoftConfig)
+    notion: "NotionConfig" = Field(default_factory=lambda: NotionConfig())
     reverse_sync: ReverseSyncConfig = Field(default_factory=ReverseSyncConfig)
     plugins: PluginConfig = Field(default_factory=PluginConfig)
     web: WebConfig = Field(default_factory=WebConfig)

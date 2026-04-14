@@ -180,6 +180,19 @@ microsoft:
     digest_weekday: 1        # 1 = Monday
     meeting_correlation: true
 
+notion:
+  # Mirror synced notes into a Notion workspace using an internal
+  # integration token. Create the integration at
+  # https://www.notion.so/my-integrations, share the target parent
+  # page with it, then export the token as NOTION_TOKEN.
+  enabled: false
+  integration_token_env: "NOTION_TOKEN"
+  # ID of the Notion page under which synced notes land as children.
+  # Find it in the URL: notion.so/<workspace>/<slug>-<ID>.
+  vault_mirror_page_id: ""
+  # Optional (reserved for a future "pull tasks back" flow)
+  tasks_database_id: ""
+
 reverse_sync:
   # Obsidian → reMarkable push-back. Three triggers, all independent.
   enabled: false

@@ -358,6 +358,23 @@ remark-bridge device list
 
 Single-tablet installs don't need any of this — leaving `remarkable.devices` empty keeps the legacy single-device behaviour unchanged.
 
+### Notion Integration
+
+Mirror your synced notes into a Notion workspace:
+
+1. Create an internal integration at <https://www.notion.so/my-integrations>, copy its `secret_...` token.
+2. Open the Notion page that should hold the mirrored notes, click **Share** → invite the integration.
+3. Copy the page id from the URL and drop it into `config.yaml`:
+
+```yaml
+notion:
+  enabled: true
+  integration_token_env: "NOTION_TOKEN"
+  vault_mirror_page_id: "abc123def4567890abc123def4567890"
+```
+
+Export the token: `export NOTION_TOKEN=secret_...` (or add it to your systemd `EnvironmentFile` / Docker `.env`). Each synced note becomes a child page under the mirror page. Headings, lists, and to-do items are preserved; richer inline formatting stays in Obsidian.
+
 ### Microsoft Outlook Integration
 
 Register an app at [entra.microsoft.com](https://entra.microsoft.com) (Public client, redirect URI `https://login.microsoftonline.com/common/oauth2/nativeclient`), add its client ID to `config.yaml` under `microsoft.client_id`, and run `remark-bridge setup-microsoft`. Action items will flow into Microsoft To Do; items with deadlines become Outlook Calendar events.
