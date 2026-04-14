@@ -68,6 +68,7 @@ class ProcessingConfig(BaseModel):
     api_key_env: str = "ANTHROPIC_API_KEY"
     extract_actions: bool = True
     extract_tags: bool = True
+    hierarchical_tags: bool = False  # slash-separated tags like "project/foo/bar"
     generate_summary: bool = True
     actions: ActionConfig = Field(default_factory=ActionConfig)
 

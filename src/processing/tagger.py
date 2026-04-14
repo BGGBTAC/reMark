@@ -25,6 +25,30 @@ Rules:
 
 Example: ["weekly-standup", "backend", "performance", "q2-goals"]"""
 
+HIERARCHICAL_TAGGING_PROMPT = """\
+Analyze this note and return relevant **hierarchical** tags as a JSON
+array of strings.
+
+Rules:
+- Return 3-8 tags
+- Use slash-separated hierarchy, two to three levels deep:
+    <context>/<topic>[/<detail>]
+  where ``context`` is one of:
+    project, meeting, research, journal, reference, technical, admin
+- Lowercase, hyphenated within each level
+  (e.g. ``project/remark-bridge/multi-device``)
+- Start with the most specific context; every tag MUST contain a slash
+- Prefer reusing parents the user has clearly established in the note;
+  only invent new parents when the topic doesn't fit existing ones
+- DO NOT include bare tags without hierarchy (no ``notes``, no ``text``)
+- Return ONLY the JSON array, no explanation
+
+Example: [
+  "project/remark-bridge/web-ui",
+  "technical/python/fastapi",
+  "meeting/standup/weekly"
+]"""
+
 # Keyword patterns for common note types
 KEYWORD_TAGS: dict[str, list[str]] = {
     "meeting": [
@@ -63,11 +87,23 @@ KEYWORD_TAGS: dict[str, list[str]] = {
 
 
 class NoteTagger:
-    """Auto-tag notes based on content."""
+    """Auto-tag notes based on content.
 
-    def __init__(self, client: anthropic.AsyncAnthropic, model: str):
+    ``hierarchical`` switches the API prompt to produce slash-separated
+    tags like ``project/remark-bridge/multi-device``. Keyword tags stay
+    flat regardless — they're used as fallbacks when the API is
+    unavailable and callers decide whether to normalise them.
+    """
+
+    def __init__(
+        self,
+        client: anthropic.AsyncAnthropic,
+        model: str,
+        hierarchical: bool = False,
+    ):
         self._client = client
         self._model = model
+        self._hierarchical = hierarchical
 
     async def tag(self, text: str, notebook_name: str = "") -> list[str]:
         """Generate tags for a note.
@@ -95,11 +131,15 @@ class NoteTagger:
         """Use Claude to generate contextual tags."""
         try:
             context = f"Notebook: {notebook_name}\n\n" if notebook_name else ""
-
+            system = (
+                HIERARCHICAL_TAGGING_PROMPT
+                if self._hierarchical
+                else TAGGING_PROMPT
+            )
             response = await self._client.messages.create(
                 model=self._model,
                 max_tokens=256,
-                system=TAGGING_PROMPT,
+                system=system,
                 messages=[{
                     "role": "user",
                     "content": f"{context}{text[:2000]}",  # cap input

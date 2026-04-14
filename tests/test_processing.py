@@ -301,6 +301,36 @@ class TestNoteTagger:
         assert tags.count("meeting") == 1
         assert tags.count("planning") == 1
 
+    @pytest.mark.asyncio
+    async def test_hierarchical_uses_different_prompt(self):
+        from src.processing.tagger import (
+            HIERARCHICAL_TAGGING_PROMPT,
+            TAGGING_PROMPT,
+        )
+
+        client = mock_anthropic_response(
+            '["project/remark/search", "technical/python/fastapi"]'
+        )
+        tagger = NoteTagger(
+            client, "claude-sonnet-4-20250514", hierarchical=True,
+        )
+        tags = await tagger.tag("Notes on the FastAPI search layer")
+        call = client.messages.create.call_args
+        assert call.kwargs["system"] == HIERARCHICAL_TAGGING_PROMPT
+        assert call.kwargs["system"] != TAGGING_PROMPT
+        # Hierarchical tags must make it through the merge unchanged
+        assert "project/remark/search" in tags
+        assert "technical/python/fastapi" in tags
+
+    @pytest.mark.asyncio
+    async def test_flat_mode_keeps_flat_prompt(self):
+        from src.processing.tagger import TAGGING_PROMPT
+
+        client = mock_anthropic_response('["flat-tag"]')
+        tagger = NoteTagger(client, "claude-sonnet-4-20250514")
+        await tagger.tag("some text")
+        assert client.messages.create.call_args.kwargs["system"] == TAGGING_PROMPT
+
 
 # =====================
 # NoteSummarizer

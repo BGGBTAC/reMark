@@ -1147,6 +1147,80 @@ async def _migrate_all(config: AppConfig) -> None:
     )
 
 
+@cli.command("retag")
+@click.option(
+    "--dry-run", is_flag=True,
+    help="Show what would change without writing",
+)
+@click.option(
+    "--limit", type=int, default=None,
+    help="Only process the first N notes (useful for testing)",
+)
+@click.pass_context
+def retag(ctx: click.Context, dry_run: bool, limit: int | None) -> None:
+    """Re-tag existing reMarkable-synced notes using the configured tagger.
+
+    Walks the vault for every ``source: remarkable`` note and re-runs
+    the tagger. Useful after enabling ``processing.hierarchical_tags``
+    to backfill older notes with the new taxonomy.
+    """
+    config: AppConfig = ctx.obj["config"]
+    _setup_logging(config)
+    asyncio.run(_retag(config, dry_run, limit))
+
+
+async def _retag(config: AppConfig, dry_run: bool, limit: int | None) -> None:
+    import os
+
+    import anthropic
+
+    from src.obsidian.vault import ObsidianVault
+    from src.processing.tagger import NoteTagger
+
+    vault = ObsidianVault(
+        Path(config.obsidian.vault_path).expanduser(),
+        config.obsidian.folder_map,
+    )
+    client = anthropic.AsyncAnthropic(
+        api_key=os.environ.get(config.processing.api_key_env, ""),
+    )
+    tagger = NoteTagger(
+        client,
+        config.processing.model,
+        hierarchical=config.processing.hierarchical_tags,
+    )
+
+    notes = vault.list_notes_by_source("remarkable")
+    if limit is not None:
+        notes = notes[:limit]
+    click.echo(f"Re-tagging {len(notes)} note(s)...")
+
+    updated = 0
+    for note_path in notes:
+        result = vault.read_note(note_path)
+        if result is None:
+            continue
+        fm, content = result
+        new_tags = await tagger.tag(content, fm.get("title", note_path.stem))
+        old_tags = fm.get("tags", []) or []
+
+        if new_tags == old_tags:
+            continue
+
+        click.echo(
+            f"  {note_path.relative_to(vault.path)}: "
+            f"{len(old_tags)} → {len(new_tags)} tags"
+        )
+        if dry_run:
+            continue
+
+        fm["tags"] = new_tags
+        vault.write_note(note_path, fm, content)
+        updated += 1
+
+    click.echo(f"Updated {updated} note(s).")
+
+
 @cli.group()
 def queue() -> None:
     """Inspect and manage the offline/retry queue."""
