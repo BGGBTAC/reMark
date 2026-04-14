@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC
 from pathlib import Path
 
 import yaml
@@ -122,6 +123,44 @@ class ObsidianVault:
         logger.info("Wrote %d actions to %s", len(actions), action_path.name)
         return action_path
 
+    def archive_note(self, path: Path) -> Path | None:
+        """Move a synced note to the Archive/ folder and update its status.
+
+        Returns the new archived path, or None if the source doesn't exist.
+        """
+        if not path.exists():
+            return None
+
+        archive_dir = self._vault_path / "Archive"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        # Preserve relative folder structure under Archive/
+        try:
+            rel = path.relative_to(self._vault_path)
+            target = archive_dir / rel
+        except ValueError:
+            target = archive_dir / path.name
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        # Update frontmatter before moving
+        result = self.read_note(path)
+        if result is not None:
+            fm, content = result
+            fm["status"] = "archived"
+            from datetime import datetime
+            fm["archived_at"] = datetime.now(UTC).isoformat()
+
+            fm_str = _dump_frontmatter(fm)
+            target.write_text(f"---\n{fm_str}---\n\n{content}\n", encoding="utf-8")
+        else:
+            import shutil
+            shutil.copy2(path, target)
+
+        path.unlink()
+        logger.info("Archived note: %s -> %s", path.name, target.relative_to(self._vault_path))
+        return target
+
     def list_notes_by_source(self, source: str = "remarkable") -> list[Path]:
         """Find all notes with a specific source in frontmatter."""
         results = []
@@ -162,8 +201,13 @@ def _sanitize_filename(name: str) -> str:
 
 def _format_note(frontmatter: dict, content: str) -> str:
     """Format a note as YAML frontmatter + Markdown content."""
-    fm_str = yaml.dump(frontmatter, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    fm_str = _dump_frontmatter(frontmatter)
     return f"---\n{fm_str}---\n\n{content}\n"
+
+
+def _dump_frontmatter(frontmatter: dict) -> str:
+    """Serialize frontmatter to YAML."""
+    return yaml.dump(frontmatter, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
 def _parse_note(text: str) -> tuple[dict, str]:

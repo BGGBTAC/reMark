@@ -44,6 +44,33 @@ CREATE TABLE IF NOT EXISTS auth_cache (
     value TEXT,
     expires_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS external_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    status TEXT DEFAULT 'active',
+    UNIQUE(provider, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_external_links_doc
+    ON external_links(doc_id, provider, kind);
+
+CREATE TABLE IF NOT EXISTS api_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT,
+    operation TEXT,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0.0,
+    doc_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_api_usage_time ON api_usage(timestamp);
+CREATE INDEX IF NOT EXISTS idx_api_usage_provider ON api_usage(provider);
 """
 
 
@@ -178,6 +205,22 @@ class SyncState:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_active_docs(self) -> list[dict]:
+        """Return all synced document entries (not errored, not pending)."""
+        rows = self.conn.execute(
+            "SELECT * FROM sync_state WHERE status IN ('synced', 'pending_response')"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_archived(self, doc_id: str) -> None:
+        """Mark a document as archived (deleted from reMarkable)."""
+        self.conn.execute(
+            "UPDATE sync_state SET status = 'archived' WHERE doc_id = ?",
+            (doc_id,),
+        )
+        self.conn.commit()
+        self._log("archive", doc_id, "archived after cloud deletion")
+
     def get_doc_state(self, doc_id: str) -> dict | None:
         """Get the sync state for a specific document."""
         row = self.conn.execute(
@@ -223,6 +266,123 @@ class SyncState:
             "INSERT INTO sync_log (timestamp, doc_id, action, details, duration_ms) "
             "VALUES (?, ?, ?, ?, ?)",
             (now, doc_id, action, details, duration_ms),
+        )
+        self.conn.commit()
+
+    def record_external_link(
+        self,
+        doc_id: str,
+        provider: str,
+        kind: str,
+        external_id: str,
+    ) -> None:
+        """Record a mapping from a doc to an external system's item (task, event, etc.)."""
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            """INSERT OR IGNORE INTO external_links
+               (doc_id, provider, kind, external_id, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (doc_id, provider, kind, external_id, now),
+        )
+        self.conn.commit()
+
+    def get_external_links(
+        self,
+        doc_id: str | None = None,
+        provider: str | None = None,
+        kind: str | None = None,
+        status: str = "active",
+    ) -> list[dict]:
+        """Look up external links, optionally filtered."""
+        where = ["status = ?"]
+        params: list = [status]
+
+        if doc_id:
+            where.append("doc_id = ?")
+            params.append(doc_id)
+        if provider:
+            where.append("provider = ?")
+            params.append(provider)
+        if kind:
+            where.append("kind = ?")
+            params.append(kind)
+
+        clause = " AND ".join(where)
+        rows = self.conn.execute(
+            f"SELECT * FROM external_links WHERE {clause}",
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def log_api_usage(
+        self,
+        provider: str,
+        model: str,
+        operation: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cost_usd: float = 0.0,
+        doc_id: str | None = None,
+    ) -> None:
+        """Log an API call's token usage and cost."""
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            """INSERT INTO api_usage
+               (timestamp, provider, model, operation,
+                input_tokens, output_tokens, cost_usd, doc_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (now, provider, model, operation, input_tokens, output_tokens, cost_usd, doc_id),
+        )
+        self.conn.commit()
+
+    def get_api_usage_summary(self, days: int | None = None) -> dict:
+        """Aggregate API usage statistics.
+
+        If days is set, only include usage within the last N days.
+        """
+        where = ""
+        params: list = []
+        if days is not None and days > 0:
+            where = "WHERE timestamp >= datetime('now', ?)"
+            params.append(f"-{days} days")
+
+        rows = self.conn.execute(
+            f"""SELECT provider,
+                       COUNT(*) as calls,
+                       SUM(input_tokens) as input_tokens,
+                       SUM(output_tokens) as output_tokens,
+                       SUM(cost_usd) as cost_usd
+                FROM api_usage {where}
+                GROUP BY provider""",
+            params,
+        ).fetchall()
+
+        providers: dict[str, dict] = {}
+        total_cost = 0.0
+        total_calls = 0
+        for row in rows:
+            providers[row["provider"]] = {
+                "calls": row["calls"] or 0,
+                "input_tokens": row["input_tokens"] or 0,
+                "output_tokens": row["output_tokens"] or 0,
+                "cost_usd": round(row["cost_usd"] or 0.0, 4),
+            }
+            total_cost += row["cost_usd"] or 0.0
+            total_calls += row["calls"] or 0
+
+        return {
+            "providers": providers,
+            "total_cost_usd": round(total_cost, 4),
+            "total_calls": total_calls,
+            "days": days,
+        }
+
+    def mark_external_link_completed(self, provider: str, external_id: str) -> None:
+        """Mark an external link as completed (e.g. task was marked done)."""
+        self.conn.execute(
+            "UPDATE external_links SET status = 'completed' "
+            "WHERE provider = ? AND external_id = ?",
+            (provider, external_id),
         )
         self.conn.commit()
 

@@ -1,6 +1,6 @@
 [project]
 name = "remark-bridge"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bidirectional sync between reMarkable tablets and an Obsidian knowledge base with intelligent note processing"
 readme = "README.md"
 license = { text = "MIT" }
@@ -31,6 +31,9 @@ dependencies = [
     "click>=8.1",
     "pydantic>=2.5",
     "mcp>=1.0",
+    "sqlite-vec>=0.1.0",
+    "numpy>=1.24",
+    "msal>=1.27.0",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +43,9 @@ dev = [
     "pytest-cov>=4.1",
     "ruff>=0.5",
 ]
+voyage = ["voyageai>=0.2.0"]
+openai = ["openai>=1.40"]
+local-embeddings = ["sentence-transformers>=3.0"]
 
 [project.scripts]
 remark-bridge = "src.main:cli"
