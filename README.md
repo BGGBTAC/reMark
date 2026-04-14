@@ -324,6 +324,27 @@ Enable semantic search by setting `search.enabled: true` in `config.yaml`. Three
 
 Embeddings are stored in the same SQLite database as the sync state (via `sqlite-vec`), so no extra infrastructure is needed.
 
+### Multi-Device
+
+Sync more than one reMarkable tablet (e.g. Paper Pro + reMarkable 2) into the same vault. Each tablet gets a stable slug id, its own device token, and its own vault subfolder so notes stay separated but searchable together.
+
+```bash
+# 1. Register tablets with short slug ids
+remark-bridge device add --id pro --label "Paper Pro" --subfolder rm-pro
+remark-bridge device add --id rm2 --label "reMarkable 2" --subfolder rm-2
+
+# 2. Pair each tablet (one-time codes from my.remarkable.com)
+remark-bridge auth --device pro
+remark-bridge auth --device rm2
+
+# 3. Add the devices block to config.yaml so `sync` iterates them
+#    See config.example.yaml for the exact schema.
+
+remark-bridge device list
+```
+
+Single-tablet installs don't need any of this — leaving `remarkable.devices` empty keeps the legacy single-device behaviour unchanged.
+
 ### Microsoft Outlook Integration
 
 Register an app at [entra.microsoft.com](https://entra.microsoft.com) (Public client, redirect URI `https://login.microsoftonline.com/common/oauth2/nativeclient`), add its client ID to `config.yaml` under `microsoft.client_id`, and run `remark-bridge setup-microsoft`. Action items will flow into Microsoft To Do; items with deadlines become Outlook Calendar events.

@@ -329,6 +329,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
         return RedirectResponse(url="/notes", status_code=303)
 
+    @app.get("/devices", response_class=HTMLResponse)
+    async def devices_view(request: Request, _=Depends(_auth_check)):
+        state = get_state()
+        try:
+            rows = state.list_devices(active_only=False)
+        finally:
+            state.close()
+        return templates.TemplateResponse(
+            request, "devices.html", {"devices": rows},
+        )
+
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_view(request: Request, _=Depends(_auth_check)):
         redacted = {

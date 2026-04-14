@@ -19,6 +19,21 @@ remarkable:
   # Where to push response documents on the tablet
   response_folder: "Responses"
 
+  # Multi-device (optional). Leave empty if you only sync a single tablet.
+  # Each entry pairs a stable slug with a vault subfolder and optional
+  # per-device sync/ignore lists. The slug drives the token path at
+  # ~/.remark-bridge/devices/<id>/device_token.
+  #
+  # devices:
+  #   - id: "pro"
+  #     label: "Paper Pro"
+  #     vault_subfolder: "rm-pro"
+  #   - id: "rm2"
+  #     label: "reMarkable 2"
+  #     vault_subfolder: "rm-2"
+  #     sync_folders: ["Notes"]
+  devices: []
+
 ocr:
   # Primary engine: "remarkable_builtin" | "google_vision" | "vlm" | "tesseract"
   primary: "remarkable_builtin"

@@ -27,7 +27,22 @@ CREATE TABLE IF NOT EXISTS sync_state (
     ocr_engine TEXT,
     page_count INTEGER DEFAULT 0,
     action_count INTEGER DEFAULT 0,
-    status TEXT DEFAULT 'synced'
+    status TEXT DEFAULT 'synced',
+    device_id TEXT NOT NULL DEFAULT 'default'
+);
+CREATE INDEX IF NOT EXISTS idx_sync_state_device ON sync_state(device_id);
+
+-- Registered reMarkable tablets. One row per physical device when the
+-- operator wants to sync multiple tablets into the same vault. Legacy
+-- single-device installs implicitly use a row with id='default'.
+CREATE TABLE IF NOT EXISTS devices (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    vault_subfolder TEXT NOT NULL DEFAULT '',
+    device_token_path TEXT NOT NULL,
+    registered_at TEXT NOT NULL,
+    last_sync_at TEXT,
+    active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS sync_log (
@@ -145,7 +160,30 @@ class SyncState:
 
     def _ensure_schema(self) -> None:
         self.conn.executescript(SCHEMA)
+        self._apply_migrations()
         self.conn.commit()
+
+    def _apply_migrations(self) -> None:
+        """Apply additive migrations for pre-existing databases.
+
+        SQLite doesn't support ``IF NOT EXISTS`` on ADD COLUMN, so we
+        introspect the schema and add columns that are missing. Keep each
+        migration tiny and idempotent.
+        """
+        # v0.4.0 — sync_state.device_id
+        cols = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(sync_state)").fetchall()
+        }
+        if "device_id" not in cols:
+            self.conn.execute(
+                "ALTER TABLE sync_state "
+                "ADD COLUMN device_id TEXT NOT NULL DEFAULT 'default'"
+            )
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sync_state_device "
+                "ON sync_state(device_id)"
+            )
 
     def needs_sync(self, doc_id: str, cloud_hash: str) -> bool:
         """Check if a document needs processing.
@@ -173,6 +211,7 @@ class SyncState:
         ocr_engine: str,
         page_count: int,
         action_count: int,
+        device_id: str = "default",
     ) -> None:
         """Record a successful sync for a document."""
         now = datetime.now(UTC).isoformat()
@@ -181,10 +220,10 @@ class SyncState:
             """INSERT INTO sync_state
                (doc_id, doc_name, parent_folder, cloud_hash, local_hash,
                 version, last_synced_at, vault_path, ocr_engine,
-                page_count, action_count, status)
+                page_count, action_count, status, device_id)
                VALUES (?, ?, ?, ?, ?,
                        COALESCE((SELECT version FROM sync_state WHERE doc_id = ?), 0) + 1,
-                       ?, ?, ?, ?, ?, 'synced')
+                       ?, ?, ?, ?, ?, 'synced', ?)
                ON CONFLICT(doc_id) DO UPDATE SET
                  doc_name = excluded.doc_name,
                  parent_folder = excluded.parent_folder,
@@ -196,10 +235,12 @@ class SyncState:
                  ocr_engine = excluded.ocr_engine,
                  page_count = excluded.page_count,
                  action_count = excluded.action_count,
-                 status = 'synced'
+                 status = 'synced',
+                 device_id = excluded.device_id
             """,
             (doc_id, doc_name, parent_folder, cloud_hash, cloud_hash,
-             doc_id, now, vault_path, ocr_engine, page_count, action_count),
+             doc_id, now, vault_path, ocr_engine, page_count, action_count,
+             device_id),
         )
         self.conn.commit()
         self._log("sync", doc_id, f"synced {doc_name}")
@@ -555,6 +596,67 @@ class SyncState:
             "UPDATE external_links SET status = 'completed' "
             "WHERE provider = ? AND external_id = ?",
             (provider, external_id),
+        )
+        self.conn.commit()
+
+    # -- Devices registry --
+
+    def register_device(
+        self,
+        device_id: str,
+        label: str,
+        device_token_path: str,
+        vault_subfolder: str = "",
+    ) -> None:
+        """Insert or update a device entry.
+
+        ``device_id`` is expected to be a stable, user-chosen slug such as
+        ``rm2`` or ``pro`` — it ends up in ``sync_state.device_id`` so it
+        should stay short and shell-safe.
+        """
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            """INSERT INTO devices
+                 (id, label, vault_subfolder, device_token_path,
+                  registered_at, active)
+               VALUES (?, ?, ?, ?, ?, 1)
+               ON CONFLICT(id) DO UPDATE SET
+                 label = excluded.label,
+                 vault_subfolder = excluded.vault_subfolder,
+                 device_token_path = excluded.device_token_path,
+                 active = 1""",
+            (device_id, label, vault_subfolder, device_token_path, now),
+        )
+        self.conn.commit()
+        self._log("device", None, f"registered {device_id} ({label})")
+
+    def list_devices(self, active_only: bool = True) -> list[dict]:
+        """Return registered devices, most recently used first."""
+        sql = "SELECT * FROM devices"
+        if active_only:
+            sql += " WHERE active = 1"
+        sql += " ORDER BY COALESCE(last_sync_at, registered_at) DESC"
+        return [dict(r) for r in self.conn.execute(sql).fetchall()]
+
+    def get_device(self, device_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM devices WHERE id = ?", (device_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def deactivate_device(self, device_id: str) -> None:
+        """Soft-delete: set active=0 so historic sync rows keep their FK."""
+        self.conn.execute(
+            "UPDATE devices SET active = 0 WHERE id = ?", (device_id,),
+        )
+        self.conn.commit()
+        self._log("device", None, f"deactivated {device_id}")
+
+    def touch_device(self, device_id: str) -> None:
+        """Record the current time as ``last_sync_at`` for a device."""
+        self.conn.execute(
+            "UPDATE devices SET last_sync_at = ? WHERE id = ?",
+            (datetime.now(UTC).isoformat(), device_id),
         )
         self.conn.commit()
 
