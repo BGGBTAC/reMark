@@ -439,7 +439,10 @@ class SyncEngine:
 
             tags = []
             if self._config.processing.extract_tags:
-                tagger = NoteTagger(client, model)
+                tagger = NoteTagger(
+                    client, model,
+                    hierarchical=self._config.processing.hierarchical_tags,
+                )
                 tags = await tagger.tag(structured.content_md, notebook.name)
 
             summary = None

@@ -65,6 +65,11 @@ processing:
   extract_tags: true
   generate_summary: true
 
+  # Emit slash-separated hierarchical tags ("project/foo/milestone")
+  # instead of flat ones. Affects new notes only; run
+  # `remark-bridge retag` to backfill the vault.
+  hierarchical_tags: false
+
   # Action item detection
   actions:
     # Pen colors that indicate action items (reMarkable color indices)
