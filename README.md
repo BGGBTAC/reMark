@@ -4,7 +4,8 @@
 [![PyPI](https://img.shields.io/pypi/v/remark-bridge)](https://pypi.org/project/remark-bridge/)
 [![Downloads](https://img.shields.io/pypi/dm/remark-bridge)](https://pypi.org/project/remark-bridge/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
+[![Non-Commercial](https://img.shields.io/badge/use-non--commercial-red.svg)](LICENSE)
 
 **Bidirectional sync between reMarkable tablets and an Obsidian knowledge base** with multi-engine OCR, intelligent note processing, semantic search, and automatic action item extraction.
 
@@ -447,4 +448,10 @@ ruff check src/ tests/
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+**Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** — see [LICENSE](LICENSE).
+
+You are free to use, modify, share, and fork this project (in whole or in part) for personal, academic, research, educational, and non-commercial purposes, as long as you give appropriate credit to **BGGBTAC**.
+
+**Commercial use — in whole or in part — requires prior written permission.** This includes paid SaaS, paid products or services that incorporate this code, and revenue-generating internal use by for-profit organizations.
+
+To request a commercial license, open an issue or contact the author via [GitHub](https://github.com/BGGBTAC).
