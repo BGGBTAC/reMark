@@ -3,7 +3,8 @@ name = "remark-bridge"
 version = "0.3.0"
 description = "Bidirectional sync between reMarkable tablets and an Obsidian knowledge base with intelligent note processing"
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "CC-BY-NC-4.0" }
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
     { name = "BGGBTAC" },
@@ -12,7 +13,8 @@ keywords = ["remarkable", "obsidian", "handwriting", "ocr", "sync"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
+    "License :: Free for non-commercial use",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Office/Business :: Groupware",
