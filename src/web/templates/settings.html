@@ -2,12 +2,21 @@
 {% block title %}Settings — {{ app_name }}{% endblock %}
 
 {% block content %}
-<h1 class="text-2xl font-semibold mb-6">Settings (read-only)</h1>
-<p class="text-sm text-gray-600 mb-4">
-  Edit <code>config.yaml</code> directly; inline editing will land in a future release.
+<h1 class="text-2xl font-semibold mb-6">Settings</h1>
+
+<p class="text-sm text-gray-600 mb-6">
+  Pick a section to edit. Changes are written back to <code>config.yaml</code>
+  preserving comments; some sections require a daemon restart to take
+  effect and will be flagged when you open them.
 </p>
 
-<div class="bg-white rounded-lg shadow-sm p-4">
-  <pre class="text-xs overflow-x-auto">{{ settings | tojson(indent=2) }}</pre>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+  {% for key, label, _ in sections %}
+  <a href="/settings/{{ key }}"
+     class="block bg-white rounded-lg shadow-sm p-4 hover:bg-gray-50 border border-gray-100">
+    <div class="font-medium text-gray-900">{{ label }}</div>
+    <div class="text-xs text-gray-500 mt-1">{{ key }}</div>
+  </a>
+  {% endfor %}
 </div>
 {% endblock %}

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ section|capitalize }} — Settings — {{ app_name }}{% endblock %}
+
+{% macro render_field(f) %}
+  <div class="mb-4">
+    <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ f.name }}">
+      {{ f.label }}
+      {% if f.is_secret %}<span class="text-xs text-amber-600 ml-2">(secret — leave blank to keep existing)</span>{% endif %}
+    </label>
+    {% if f.kind == 'bool' %}
+      <input type="checkbox" id="{{ f.name }}" name="{{ f.name }}" value="true"
+             class="h-4 w-4"
+             {% if f.value %}checked{% endif %}>
+    {% elif f.kind == 'select' %}
+      <select id="{{ f.name }}" name="{{ f.name }}"
+              class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+        {% for c in f.choices %}
+          <option value="{{ c }}" {% if f.value|string == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    {% elif f.kind == 'textarea' %}
+      <textarea id="{{ f.name }}" name="{{ f.name }}" rows="4"
+                class="w-full border border-gray-300 rounded-md px-3 py-1.5 font-mono text-xs"
+                placeholder="one value per line">{{ f.value }}</textarea>
+    {% elif f.kind == 'json' %}
+      <textarea id="{{ f.name }}" name="{{ f.name }}" rows="6"
+                class="w-full border border-gray-300 rounded-md px-3 py-1.5 font-mono text-xs"
+                placeholder="JSON">{{ f.value }}</textarea>
+    {% elif f.kind == 'number' %}
+      <input type="number" id="{{ f.name }}" name="{{ f.name }}" value="{{ f.value }}"
+             step="any"
+             class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+    {% elif f.kind == 'password' %}
+      <input type="password" id="{{ f.name }}" name="{{ f.name }}" value="{{ f.value }}"
+             autocomplete="new-password"
+             class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+    {% else %}
+      <input type="text" id="{{ f.name }}" name="{{ f.name }}" value="{{ f.value }}"
+             class="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm">
+    {% endif %}
+    {% if f.help %}
+      <p class="text-xs text-gray-500 mt-1">{{ f.help }}</p>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro render_group(g, depth=0) %}
+  {% if depth == 0 %}
+    <div class="bg-white rounded-lg shadow-sm p-6 mb-4">
+  {% else %}
+    <fieldset class="border border-gray-200 rounded-md p-4 mb-4">
+      <legend class="px-2 text-sm font-semibold text-gray-700">{{ g.title }}</legend>
+  {% endif %}
+    {% for f in g.fields %}
+      {{ render_field(f) }}
+    {% endfor %}
+    {% for sub in g.subgroups %}
+      {{ render_group(sub, depth + 1) }}
+    {% endfor %}
+  {% if depth == 0 %}
+    </div>
+  {% else %}
+    </fieldset>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="flex items-center gap-3 mb-6">
+  <a href="/settings" class="text-sm text-gray-500 hover:text-gray-900">← All settings</a>
+  <h1 class="text-2xl font-semibold">{{ form.title }}</h1>
+</div>
+
+{% if saved %}
+  <div class="mb-4 p-3 rounded-md bg-green-50 border border-green-200 text-green-800 text-sm">
+    Saved. {% if restart_required %}Restart the bridge processes for these changes to take effect.{% endif %}
+  </div>
+{% endif %}
+{% if error %}
+  <div class="mb-4 p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-sm">
+    Validation failed: <pre class="mt-1 text-xs whitespace-pre-wrap">{{ error }}</pre>
+  </div>
+{% endif %}
+{% if restart_required and not saved %}
+  <div class="mb-4 p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+    <strong>Restart required:</strong> changes here only apply after you restart the sync and web services.
+  </div>
+{% endif %}
+
+<form method="post" action="/settings/{{ section }}">
+  {{ render_group(form) }}
+  <div class="flex gap-2">
+    <button type="submit"
+            class="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800">
+      Save changes
+    </button>
+    <a href="/settings"
+       class="px-4 py-2 bg-white text-gray-700 text-sm rounded-md border border-gray-300 hover:bg-gray-50">
+      Cancel
+    </a>
+  </div>
+</form>
+{% endblock %}
