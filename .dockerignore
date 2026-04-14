@@ -1,0 +1,36 @@
+# VCS
+.git
+.github
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+*.egg-info
+
+# Testing & coverage
+.pytest_cache
+.ruff_cache
+htmlcov
+.coverage*
+coverage.xml
+
+# IDE / editor
+.vscode
+.idea
+.DS_Store
+
+# Docs & infra not needed in the image
+docs
+systemd
+config.yaml
+config/
+vault
+state
+Instruct
+.remember
+.claude

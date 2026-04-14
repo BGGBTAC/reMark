@@ -134,6 +134,42 @@ pip install .
 
 > **Note:** reMark requires `libcairo2` for SVG→PNG rendering. On Debian/Ubuntu: `sudo apt install libcairo2-dev`. On macOS: `brew install cairo`.
 
+### With Docker
+
+The repository ships a multi-stage `Dockerfile` and a `docker-compose.yml`
+that runs the dashboard + sync daemon together, sharing a common state
+volume and vault.
+
+```bash
+git clone https://github.com/BGGBTAC/reMark.git
+cd reMark
+
+# 1. Create your config directory (mounted read/write into the container)
+mkdir -p config
+cp config.example.yaml config/config.yaml
+# edit config/config.yaml — at minimum set your vault path to /vault
+
+# 2. Copy and fill in environment variables
+cp .env.example .env
+# edit .env — set ANTHROPIC_API_KEY and any other credentials you use
+
+# 3. Build and start both services
+docker compose up -d --build
+```
+
+The dashboard is then reachable on <http://localhost:8000> (set
+`REMARK_WEB_PORT` in `.env` to change the host port). First-time
+reMarkable Cloud auth runs inside the sync container — tail it with:
+
+```bash
+docker compose exec sync remark-bridge auth
+docker compose logs -f sync
+```
+
+Named volumes `vault` and `state` persist your Obsidian vault and the
+SQLite state DB across container recreates. Healthchecks hit
+`/healthz`, so `docker compose ps` will flag a degraded deployment.
+
 ## Setup
 
 ```bash
