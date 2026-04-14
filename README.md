@@ -12,7 +12,7 @@
 
 Write on your reMarkable. reMark handles the rest — your handwritten notes become structured, searchable Markdown in Obsidian (optionally mirrored to OneNote), complete with tags, summaries, and action items. Push responses back to the tablet, query your vault in natural language, drive Microsoft To Do / Calendar / Teams, and run the whole thing with a web dashboard + mobile PWA.
 
-> **Latest:** v0.3.0 — Web Dashboard + PWA, OneNote & Teams integration, Obsidian → reMarkable reverse sync, on-device templates, and a plugin system. See [CHANGELOG.md](CHANGELOG.md) for the full history.
+> **Latest:** v0.4.0 — Docker + multi-arch GHCR image, multi-device sync (register multiple reMarkable tablets against the same vault), and hybrid BM25 + semantic search with RRF fusion. See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ---
 

@@ -4,6 +4,62 @@ All notable changes to **reMark** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) and its commits group into the
 phases described in the release notes.
 
+## [0.4.0] — 2026-04-14
+
+"Distribution & Multi-Device". Three significant additions, no breaking
+changes for single-tablet installs.
+
+### Added
+- **Docker distribution**. Multi-stage `Dockerfile` (python:3.12-slim-bookworm,
+  non-root user, `tini` as PID 1, HEALTHCHECK against `/healthz`) and a
+  `docker-compose.yml` that ships the dashboard + sync daemon sharing a
+  vault/state volume. The release workflow now also builds and publishes
+  `ghcr.io/bggbtac/remark-bridge` as multi-arch (linux/amd64 + linux/arm64),
+  tagged with `{version}`, `{major}.{minor}`, and `latest`. Compose pulls
+  from GHCR by default; `build:` is available as a local fallback. New
+  `REMARK_IMAGE_TAG` in `.env.example` for pinning releases.
+- **Multi-device sync**. Register multiple reMarkable tablets against the
+  same vault. Each device has a stable slug id (e.g. `pro`, `rm2`), its
+  own device-token file under `~/.remark-bridge/devices/<id>/`, and an
+  optional vault subfolder so notes stay separated. New `devices` table
+  in the state DB plus `sync_state.device_id` column (additive migration
+  auto-fills `default` for pre-0.4 rows). CLI group
+  `remark-bridge device add | list | remove`, new `DeviceConfig` schema
+  under `remarkable.devices`, a `/devices` page in the web UI, and a
+  `set_device()` hook on `SyncEngine` that the sync loop calls per
+  tablet. Single-tablet installs see zero behaviour change.
+- **Hybrid search (BM25 + semantic with RRF)**. A new FTS5 virtual table
+  `vault_chunks_fts` lives alongside the existing vector index in the
+  same SQLite DB. The indexer writes both in one transaction; removal
+  and `clear()` keep them in sync. `SearchQuery.ask()` grew a
+  `mode: "semantic" | "bm25" | "hybrid"` parameter (default `hybrid`,
+  fused via Reciprocal Rank Fusion with k=60). Config key
+  `search.mode` threads through the web `/ask` route and the CLI
+  `ask` command. BM25 needs no extra dependency — FTS5 ships with
+  stock SQLite.
+
+### Changed
+- `docker-compose.yml` now defaults to pulling the published GHCR image
+  rather than building locally, so users can run the stack without a
+  repository checkout. `build:` is retained as a fallback.
+- README rewritten around the GHCR-first Docker flow, added a Docker
+  badge linking to the packages page and a tag table.
+
+### Tests
+- `tests/test_multi_device.py` — device registry CRUD, token-path
+  convention, `device_id` column persistence, legacy 0.3 migration.
+- `tests/test_search_hybrid.py` — BM25 rare-keyword hits, hybrid
+  surfacing of exact matches over tied semantic scores, `bm25` mode
+  skipping embedding backend, FTS cleanup on remove and clear.
+
+### Fixed
+- Legacy 0.3 database upgrade: the `device_id` index was declared in the
+  inline schema and ran before the `ALTER TABLE` migration, blowing up
+  pre-existing DBs. Moved into `_apply_migrations`.
+- BM25 query was wrapped as an FTS5 *phrase*, requiring contiguous
+  matches. Tokenised + OR'd individually-quoted terms so any-match
+  scoring works as intended.
+
 ## [0.3.1] — 2026-04-14
 
 Reliability patch. No breaking changes.
