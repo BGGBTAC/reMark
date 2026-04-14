@@ -1148,6 +1148,74 @@ async def _migrate_all(config: AppConfig) -> None:
 
 
 @cli.group()
+def queue() -> None:
+    """Inspect and manage the offline/retry queue."""
+
+
+@queue.command("list")
+@click.option("--status", default=None, help="Filter by status (pending/done/failed)")
+@click.pass_context
+def queue_list(ctx: click.Context, status: str | None) -> None:
+    """Show queue entries."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        rows = state.list_queue(status=status)
+    finally:
+        state.close()
+
+    if not rows:
+        click.echo("Queue is empty.")
+        return
+
+    for row in rows:
+        click.echo(
+            f"  [{row['id']:>5}] {row['status']:<8} {row['op_type']:<20} "
+            f"attempts={row['attempts']}/{row['max_attempts']} "
+            f"doc={row.get('doc_id') or '-'} "
+            f"err={(row.get('last_error') or '')[:60]}"
+        )
+
+
+@queue.command("retry")
+@click.option("--id", "queue_id", type=int, required=True)
+@click.pass_context
+def queue_retry(ctx: click.Context, queue_id: int) -> None:
+    """Reset a failed entry to pending."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        state.retry_queue_entry(queue_id)
+    finally:
+        state.close()
+    click.echo(f"Queue entry {queue_id} reset to pending.")
+
+
+@queue.command("clear")
+@click.option(
+    "--status", default=None,
+    help="Only delete entries with this status (omit to clear all)",
+)
+@click.confirmation_option(prompt="Really delete queue entries?")
+@click.pass_context
+def queue_clear(ctx: click.Context, status: str | None) -> None:
+    """Delete queue entries."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        n = state.clear_queue(status=status)
+    finally:
+        state.close()
+    click.echo(f"Deleted {n} entries.")
+
+
+@cli.group()
 def device() -> None:
     """Manage registered reMarkable tablets (multi-device setups)."""
 

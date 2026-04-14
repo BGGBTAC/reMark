@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Queue — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="flex items-baseline justify-between mb-6">
+  <h1 class="text-2xl font-semibold">Sync queue</h1>
+  <div class="text-sm text-gray-600">
+    pending: <strong>{{ summary.get('pending', 0) }}</strong> &nbsp;
+    failed: <strong class="text-red-700">{{ summary.get('failed', 0) }}</strong> &nbsp;
+    done: <strong>{{ summary.get('done', 0) }}</strong>
+  </div>
+</div>
+
+<div class="flex items-center gap-2 mb-4 text-sm">
+  <a href="/queue" class="px-3 py-1 rounded {% if not filter_status %}bg-gray-900 text-white{% else %}bg-gray-100 hover:bg-gray-200{% endif %}">All</a>
+  <a href="/queue?status=pending" class="px-3 py-1 rounded {% if filter_status == 'pending' %}bg-gray-900 text-white{% else %}bg-gray-100 hover:bg-gray-200{% endif %}">Pending</a>
+  <a href="/queue?status=failed" class="px-3 py-1 rounded {% if filter_status == 'failed' %}bg-gray-900 text-white{% else %}bg-gray-100 hover:bg-gray-200{% endif %}">Failed</a>
+  <a href="/queue?status=done" class="px-3 py-1 rounded {% if filter_status == 'done' %}bg-gray-900 text-white{% else %}bg-gray-100 hover:bg-gray-200{% endif %}">Done</a>
+  <form method="post" action="/queue/clear" class="ml-auto">
+    {% if filter_status %}<input type="hidden" name="status" value="{{ filter_status }}">{% endif %}
+    <button type="submit"
+            onclick="return confirm('Delete {% if filter_status %}{{ filter_status }}{% else %}all{% endif %} queue entries?');"
+            class="px-3 py-1 text-sm rounded bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">
+      Clear {% if filter_status %}{{ filter_status }}{% endif %}
+    </button>
+  </form>
+</div>
+
+{% if rows %}
+<div class="bg-white rounded-lg shadow-sm overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b">
+      <tr>
+        <th class="text-left p-2">#</th>
+        <th class="text-left p-2">Status</th>
+        <th class="text-left p-2">Op</th>
+        <th class="text-left p-2">Doc</th>
+        <th class="text-left p-2">Attempts</th>
+        <th class="text-left p-2">Next try</th>
+        <th class="text-left p-2">Error</th>
+        <th class="text-left p-2"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="border-b last:border-0">
+        <td class="p-2 text-gray-400 font-mono text-xs">{{ r.id }}</td>
+        <td class="p-2">
+          {% if r.status == 'failed' %}
+            <span class="px-2 py-0.5 rounded bg-red-100 text-red-800 text-xs">failed</span>
+          {% elif r.status == 'pending' %}
+            <span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-xs">pending</span>
+          {% else %}
+            <span class="px-2 py-0.5 rounded bg-green-100 text-green-800 text-xs">{{ r.status }}</span>
+          {% endif %}
+        </td>
+        <td class="p-2 font-mono text-xs">{{ r.op_type }}</td>
+        <td class="p-2 text-gray-600 font-mono text-xs">{{ (r.doc_id or '-')[:12] }}</td>
+        <td class="p-2">{{ r.attempts }}/{{ r.max_attempts }}</td>
+        <td class="p-2 text-xs text-gray-500">{{ r.next_attempt_at or '—' }}</td>
+        <td class="p-2 text-xs text-red-700">{{ (r.last_error or '')[:80] }}</td>
+        <td class="p-2">
+          {% if r.status == 'failed' %}
+          <form method="post" action="/queue/{{ r.id }}/retry" class="inline">
+            <button type="submit"
+                    class="text-xs px-2 py-0.5 rounded bg-white border border-gray-300 hover:bg-gray-50">
+              Retry
+            </button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="bg-white rounded-lg shadow-sm p-6 text-center text-gray-500">
+  No entries.
+</div>
+{% endif %}
+{% endblock %}

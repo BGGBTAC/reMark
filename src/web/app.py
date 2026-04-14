@@ -137,6 +137,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             stats = state.get_sync_stats()
             usage = state.get_api_usage_summary(days=30)
             recent_log = state.get_recent_log(limit=10)
+            queue_summary = state.queue_summary()
         finally:
             state.close()
 
@@ -166,6 +167,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             {
                 "stats": stats, "usage": usage,
                 "recent_notes": recent_notes, "recent_log": recent_log,
+                "queue_summary": queue_summary,
             },
         )
 
@@ -356,6 +358,45 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         vault.write_note(file_path, fm, body)
 
         return RedirectResponse(url="/notes", status_code=303)
+
+    @app.get("/queue", response_class=HTMLResponse)
+    async def queue_view(
+        request: Request,
+        status: str | None = None,
+        _=Depends(_auth_check),
+    ):
+        state = get_state()
+        try:
+            rows = state.list_queue(status=status)
+            summary = state.queue_summary()
+        finally:
+            state.close()
+        return templates.TemplateResponse(
+            request, "queue.html",
+            {"rows": rows, "summary": summary, "filter_status": status},
+        )
+
+    @app.post("/queue/{queue_id}/retry")
+    async def queue_retry(queue_id: int, _=Depends(_auth_check)):
+        state = get_state()
+        try:
+            state.retry_queue_entry(queue_id)
+        finally:
+            state.close()
+        return RedirectResponse(url="/queue", status_code=303)
+
+    @app.post("/queue/clear")
+    async def queue_clear(
+        request: Request, _=Depends(_auth_check),
+    ):
+        form = await request.form()
+        status = form.get("status") or None
+        state = get_state()
+        try:
+            state.clear_queue(status=status)
+        finally:
+            state.close()
+        return RedirectResponse(url="/queue", status_code=303)
 
     @app.get("/devices", response_class=HTMLResponse)
     async def devices_view(request: Request, _=Depends(_auth_check)):
