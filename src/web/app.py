@@ -26,6 +26,18 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
+
+def _version() -> str:
+    """Return the installed package version, falling back if unreleased."""
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            return version("remark-bridge")
+        except PackageNotFoundError:
+            return "0.0.0+dev"
+    except Exception:
+        return "unknown"
+
 _security = HTTPBasic(auto_error=False)
 
 
@@ -394,7 +406,44 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.get("/healthz")
     async def health():
-        return {"status": "ok"}
+        """Liveness + readiness probe.
+
+        Returns 200 with ``status="ok"`` when the state DB is reachable
+        and vault path exists. 503 with ``status="degraded"`` otherwise.
+        Mirrors the checks a systemd watchdog or Docker HEALTHCHECK needs.
+        """
+        checks: dict[str, str] = {}
+        ok = True
+
+        try:
+            state = get_state()
+            try:
+                state.conn.execute("SELECT 1").fetchone()
+                checks["state_db"] = "ok"
+            finally:
+                state.close()
+        except Exception as exc:
+            ok = False
+            checks["state_db"] = f"error: {exc.__class__.__name__}"
+
+        try:
+            vault_path = Path(config.obsidian.vault_path).expanduser()
+            checks["vault"] = "ok" if vault_path.exists() else "missing"
+            if not vault_path.exists():
+                ok = False
+        except Exception as exc:
+            ok = False
+            checks["vault"] = f"error: {exc.__class__.__name__}"
+
+        payload = {
+            "status": "ok" if ok else "degraded",
+            "version": _version(),
+            "checks": checks,
+        }
+        return JSONResponse(
+            payload,
+            status_code=200 if ok else 503,
+        )
 
     return app
 

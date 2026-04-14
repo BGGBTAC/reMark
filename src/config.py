@@ -220,6 +220,7 @@ class LoggingConfig(BaseModel):
     file: str = "~/.remark-bridge/bridge.log"
     max_size_mb: int = 50
     backup_count: int = 5
+    format: Literal["text", "json"] = "text"
 
 
 class AppConfig(BaseModel):

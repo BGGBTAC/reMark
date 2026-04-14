@@ -4,6 +4,36 @@ All notable changes to **reMark** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) and its commits group into the
 phases described in the release notes.
 
+## [0.3.1] — 2026-04-14
+
+Reliability patch. No breaking changes.
+
+### Fixed
+- CI: `pyproject.toml` now uses the SPDX license expression form
+  (`license = "CC-BY-NC-4.0"`) required by setuptools ≥ 77. The legacy
+  `{ text = "..." }` form and `License ::` classifiers have been removed.
+- License metadata on PyPI now matches the repository license
+  (CC BY-NC 4.0). Prior 0.3.0 wheel on PyPI is immutable and still
+  shows MIT — install 0.3.1 for correct metadata.
+
+### Added
+- Structured JSON logging (`src/log_setup.py`). Opt in via
+  `logging.format: json` in config, or `REMARK_LOG_FORMAT=json` env var.
+  Rotating file handler replaces the plain `FileHandler`.
+- `/healthz` now reports real readiness: state-DB ping, vault-path
+  check, installed package version. Returns 503 when degraded so
+  systemd / Docker HEALTHCHECK can detect failures.
+- Split systemd units: `remark-bridge-sync.service` (+ matching timer)
+  and `remark-bridge-web.service`. Old combined unit kept for backward
+  compatibility. Includes `EnvironmentFile=` and stricter hardening
+  (`ProtectKernel*`, `LockPersonality`, `MemoryDenyWriteExecute`).
+
+### Changed
+- Dependency floor bumps: `anthropic>=0.49`, `mcp>=1.2`, `msal>=1.30`,
+  `uvicorn>=0.32`, `pydantic>=2.7`, `reportlab>=4.2`, `sqlite-vec>=0.1.5`,
+  `websockets>=13`, `numpy>=1.26`, `gitpython>=3.1.43`, `pywebpush>=2.0.3`.
+- Python 3.13 added to classifier list (already supported via 3.11 floor).
+
 ## [0.3.0] — 2026-04-14
 
 Dashboard, PWA, OneNote, Teams, reverse sync, templates, plugins.

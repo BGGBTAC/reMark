@@ -1,6 +1,6 @@
 [project]
 name = "remark-bridge"
-version = "0.3.0"
+version = "0.3.1"
 description = "Bidirectional sync between reMarkable tablets and an Obsidian knowledge base with intelligent note processing"
 readme = "README.md"
 license = "CC-BY-NC-4.0"
@@ -15,29 +15,30 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Groupware",
 ]
 
 dependencies = [
     "rmscene>=0.5",
     "httpx>=0.27",
-    "websockets>=12.0",
+    "websockets>=13.0",
     "pyyaml>=6.0",
-    "anthropic>=0.40",
-    "google-cloud-vision>=3.5",
-    "reportlab>=4.0",
+    "anthropic>=0.49",
+    "google-cloud-vision>=3.7",
+    "reportlab>=4.2",
     "cairosvg>=2.7",
-    "gitpython>=3.1",
+    "gitpython>=3.1.43",
     "click>=8.1",
-    "pydantic>=2.5",
-    "mcp>=1.0",
-    "sqlite-vec>=0.1.0",
-    "numpy>=1.24",
-    "msal>=1.27.0",
+    "pydantic>=2.7",
+    "mcp>=1.2",
+    "sqlite-vec>=0.1.5",
+    "numpy>=1.26",
+    "msal>=1.30",
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
+    "uvicorn[standard]>=0.32",
     "jinja2>=3.1",
-    "pywebpush>=2.0.0",
+    "pywebpush>=2.0.3",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,35 @@
+[Unit]
+Description=reMark Bridge - reMarkable Sync Daemon
+Documentation=https://github.com/BGGBTAC/reMark
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=remark
+WorkingDirectory=/home/remark/reMark
+EnvironmentFile=-/etc/remark-bridge/env
+ExecStart=/home/remark/reMark/.venv/bin/remark-bridge sync
+Restart=on-failure
+RestartSec=30
+
+# Watchdog via /healthz on the web side; sync daemon just restarts on crash
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=remark-bridge-sync
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/remark /var/lib/remark-bridge
+PrivateTmp=true
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target
