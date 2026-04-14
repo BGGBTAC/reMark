@@ -1,0 +1,61 @@
+# docker-compose.yml — reMark Bridge full stack
+#
+# Two services share the same image:
+#   - web:  FastAPI dashboard / PWA on :8000
+#   - sync: background sync daemon
+#
+# They also share volumes: a single state DB, vault, and config directory.
+#
+# Copy .env.example to .env and fill in your API keys before running.
+
+services:
+  web:
+    image: remark-bridge:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: remark-bridge-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      REMARK_CONFIG: /config/config.yaml
+      REMARK_LOG_FORMAT: json
+    ports:
+      - "${REMARK_WEB_PORT:-8000}:8000"
+    volumes:
+      - ./config:/config
+      - vault:/vault
+      - state:/state
+    command: ["serve-web", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  sync:
+    image: remark-bridge:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: remark-bridge-sync
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      REMARK_CONFIG: /config/config.yaml
+      REMARK_LOG_FORMAT: json
+    volumes:
+      - ./config:/config
+      - vault:/vault
+      - state:/state
+    command: ["sync"]
+
+volumes:
+  vault:
+  state:
