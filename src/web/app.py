@@ -419,6 +419,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         ("obsidian", "Obsidian vault", "obsidian"),
         ("search", "Search", "search"),
         ("microsoft", "Microsoft Graph", "microsoft"),
+        ("notion", "Notion", "notion"),
         ("reverse_sync", "Reverse sync", "reverse_sync"),
         ("response", "Responses", "response"),
         ("templates", "Templates", "templates"),

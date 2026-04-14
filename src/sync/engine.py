@@ -546,6 +546,24 @@ class SyncEngine:
                     except Exception as e:
                         logger.warning("OneNote mirror failed for %s: %s", doc.name, e)
 
+            # Notion mirror (if enabled)
+            if self._config.notion.enabled:
+                try:
+                    from src.integrations.notion import NotionService
+                    notion_service = NotionService(self._config.notion)
+                    if notion_service.enabled:
+                        result_notion = await notion_service.write_note(
+                            title=notebook.name,
+                            content=content,
+                            tags=tags,
+                        )
+                        if result_notion is not None:
+                            self.state.record_external_link(
+                                doc.id, "notion", "page", result_notion.page_id,
+                            )
+                except Exception as e:
+                    logger.warning("Notion mirror failed for %s: %s", doc.name, e)
+
             # Update state
             engines = list({r.engine_used for r in ocr_results if r.engine_used != "none"})
             self.state.mark_synced(
