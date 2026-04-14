@@ -82,6 +82,15 @@ class VectorIndex:
             CREATE INDEX IF NOT EXISTS idx_vault_chunks_doc ON vault_chunks(doc_id)
         """)
 
+        # FTS5 full-text index for BM25 ranking. Shipped with SQLite's
+        # default builds, no extra dependency. ``content=''`` keeps the
+        # FTS table contentless so we own writes explicitly via the same
+        # chunk_id used as rowid.
+        self.conn.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS vault_chunks_fts
+            USING fts5(content, heading, tokenize = 'porter unicode61')
+        """)
+
         # Check if vec0 table exists and whether dimensions match
         cur = self.conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='vault_embeddings'"
@@ -153,6 +162,14 @@ class VectorIndex:
                 (chunk_id, packed),
             )
 
+            # Full-text row — rowid == chunk_id so we can rejoin cleanly.
+            heading_flat = " › ".join(chunk.heading_path) if chunk.heading_path else ""
+            self.conn.execute(
+                "INSERT INTO vault_chunks_fts (rowid, content, heading) "
+                "VALUES (?, ?, ?)",
+                (chunk_id, chunk.content, heading_flat),
+            )
+
         self.conn.commit()
         logger.info("Indexed %d chunks for document %s", len(chunks), doc_id[:8])
 
@@ -169,6 +186,10 @@ class VectorIndex:
         placeholders = ",".join(["?"] * len(chunk_ids))
         self.conn.execute(
             f"DELETE FROM vault_embeddings WHERE chunk_id IN ({placeholders})",
+            chunk_ids,
+        )
+        self.conn.execute(
+            f"DELETE FROM vault_chunks_fts WHERE rowid IN ({placeholders})",
             chunk_ids,
         )
         self.conn.execute(
@@ -231,9 +252,61 @@ class VectorIndex:
             "dimension": self._dimension,
         }
 
+    def search_bm25(
+        self,
+        query: str,
+        top_k: int = 5,
+    ) -> list[SearchHit]:
+        """Find the top-k chunks ranked by BM25 (FTS5 ``rank``).
+
+        Returns hits ordered best-first. The ``distance`` field carries
+        the negated BM25 score so lower is better, mirroring the vector
+        API — use ``SearchHit.score`` for a normalized 0..1 relevance.
+        """
+        if not query.strip():
+            return []
+
+        # FTS5 MATCH expects its own mini-language. Quote the query so
+        # users can type natural sentences without worrying about
+        # operator characters (AND, OR, NEAR, parens, quotes).
+        safe_query = '"' + query.replace('"', '""') + '"'
+
+        cur = self.conn.execute(
+            """SELECT vc.chunk_id, vc.doc_id, vc.vault_path, vc.content,
+                      vc.heading_path, vf.rank AS bm25_rank
+               FROM vault_chunks_fts vf
+               JOIN vault_chunks vc ON vc.chunk_id = vf.rowid
+               WHERE vault_chunks_fts MATCH ?
+               ORDER BY vf.rank
+               LIMIT ?""",
+            (safe_query, top_k),
+        )
+
+        hits: list[SearchHit] = []
+        for row in cur.fetchall():
+            # FTS5 rank is negative; closer to 0 = less relevant, more
+            # negative = more relevant. Map into a [0, 1] similarity so
+            # the rest of the pipeline can treat BM25 and vectors the
+            # same way. The exact scale doesn't matter for ranking, only
+            # for the optional ``min_score`` floor.
+            raw = row["bm25_rank"]
+            normalized = max(0.0, min(1.0, -raw / 10.0)) if raw is not None else 0.0
+            hits.append(SearchHit(
+                chunk_id=row["chunk_id"],
+                doc_id=row["doc_id"],
+                vault_path=row["vault_path"],
+                content=row["content"],
+                heading_path=json.loads(row["heading_path"]),
+                # Re-use the cosine-distance slot: 2*(1-sim) keeps
+                # ``SearchHit.score`` monotonic with relevance.
+                distance=2.0 * (1.0 - normalized),
+            ))
+        return hits
+
     def clear(self) -> None:
         """Remove all entries from the index."""
         self.conn.execute("DELETE FROM vault_embeddings")
+        self.conn.execute("DELETE FROM vault_chunks_fts")
         self.conn.execute("DELETE FROM vault_chunks")
         self.conn.commit()
 

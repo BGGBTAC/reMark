@@ -176,6 +176,10 @@ class SearchConfig(BaseModel):
     min_score: float = 0.3
     synthesize_answer: bool = True
     synthesis_model: str = "claude-sonnet-4-20250514"
+    # Retrieval mode. Hybrid fuses semantic + BM25 with RRF and is the
+    # best default for most knowledge bases. Set to "semantic" or "bm25"
+    # to disable fusion.
+    mode: Literal["semantic", "bm25", "hybrid"] = "hybrid"
 
 
 class ReverseSyncConfig(BaseModel):

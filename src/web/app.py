@@ -275,6 +275,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 top_k=config.search.top_k,
                 min_score=config.search.min_score,
                 synthesize=config.search.synthesize_answer,
+                mode=config.search.mode,
             )
 
             hits = [{

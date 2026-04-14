@@ -322,7 +322,7 @@ Enable semantic search by setting `search.enabled: true` in `config.yaml`. Three
 - **voyage** — highest quality, requires `VOYAGE_API_KEY`. Install with `pip install 'remark-bridge[voyage]'`.
 - **openai** — solid quality, requires `OPENAI_API_KEY`. Install with `pip install 'remark-bridge[openai]'`.
 
-Embeddings are stored in the same SQLite database as the sync state (via `sqlite-vec`), so no extra infrastructure is needed.
+Retrieval defaults to **hybrid** (vector + BM25 via SQLite FTS5, fused with Reciprocal Rank Fusion). Switch to `search.mode: semantic` or `bm25` if you want a single signal. BM25 is served from FTS5 which ships with stock SQLite — no extra dependency. Embeddings are stored in the same database (via `sqlite-vec`), so the full search stack lives in one file.
 
 ### Multi-Device
 

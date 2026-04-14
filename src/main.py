@@ -478,6 +478,7 @@ async def _ask(config: AppConfig, query: str, top_k: int, with_answer: bool) -> 
         top_k=top_k,
         min_score=config.search.min_score,
         synthesize=synthesize,
+        mode=config.search.mode,
     )
 
     if not result.has_results:
