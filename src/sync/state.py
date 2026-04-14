@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS sync_state (
     status TEXT DEFAULT 'synced',
     device_id TEXT NOT NULL DEFAULT 'default'
 );
-CREATE INDEX IF NOT EXISTS idx_sync_state_device ON sync_state(device_id);
+-- NOTE: the idx_sync_state_device index is created in _apply_migrations
+-- so pre-0.4.0 databases (which lack the device_id column) can have the
+-- column added before we try to index it.
 
 -- Registered reMarkable tablets. One row per physical device when the
 -- operator wants to sync multiple tablets into the same vault. Legacy
@@ -180,10 +182,12 @@ class SyncState:
                 "ALTER TABLE sync_state "
                 "ADD COLUMN device_id TEXT NOT NULL DEFAULT 'default'"
             )
-            self.conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_sync_state_device "
-                "ON sync_state(device_id)"
-            )
+        # Index creation lives here so fresh installs and upgraded ones
+        # both get it, and pre-0.4 DBs don't trip on a missing column.
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_state_device "
+            "ON sync_state(device_id)"
+        )
 
     def needs_sync(self, doc_id: str, cloud_hash: str) -> bool:
         """Check if a document needs processing.
