@@ -223,12 +223,16 @@ def _map_control(annotation: Any) -> tuple[str, list[str]]:
 
 def _coerce(kind: str, raw: Any, annotation: Any) -> Any:
     """Convert a raw form value into the Python type Pydantic wants."""
+    # Booleans deserve special handling *before* the None early-return:
+    # an unchecked checkbox submits nothing at all, but the semantic
+    # value is ``False``, not "leave this field null".
+    if kind == "bool":
+        if raw is None:
+            return False
+        return bool(raw) and str(raw).lower() not in ("", "false", "0", "off")
+
     if raw is None:
         return None
-
-    if kind == "bool":
-        # Checkboxes submit "on" when checked, absent otherwise.
-        return bool(raw) and str(raw).lower() not in ("", "false", "0", "off")
 
     if kind == "number":
         if raw == "" or raw is None:

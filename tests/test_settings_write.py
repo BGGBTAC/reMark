@@ -90,13 +90,13 @@ class TestFormBuilder:
 
     def test_secret_fields_mask_when_populated(self):
         class _Secret(BaseModel):
-            client_id: str = "real-value"
+            api_key: str = "real-value"
             label: str = "ok"
 
         form = build_form(_Secret, _Secret())
         by_name = {f.name: f for f in form.fields}
-        assert by_name["client_id"].kind == "password"
-        assert by_name["client_id"].value == MASK
+        assert by_name["api_key"].kind == "password"
+        assert by_name["api_key"].value == MASK
         # Non-secret field is untouched
         assert by_name["label"].value == "ok"
 
