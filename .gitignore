@@ -1,11 +1,5 @@
 ## reMark — Project-specific ignores
 
-# Dev-only planning and tooling files
-remarkable-claude-plan.md
-CLAUDE.md
-.claude/
-.remember/
-
 # Secrets and local config
 *.env
 config.yaml
@@ -459,10 +453,3 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
-
-# MemPalace
-mempalace.yaml
-.mempalace/
-chroma.sqlite3
-chroma/
-entities.json
