@@ -53,7 +53,7 @@ class FormGroup:
 
     title: str
     fields: list[FormField]
-    subgroups: list["FormGroup"] = field(default_factory=list)
+    subgroups: list[FormGroup] = field(default_factory=list)
 
 
 def build_form(

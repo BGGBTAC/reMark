@@ -266,7 +266,7 @@ class AppConfig(BaseModel):
     response: ResponseConfig = Field(default_factory=ResponseConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     microsoft: MicrosoftConfig = Field(default_factory=MicrosoftConfig)
-    notion: "NotionConfig" = Field(default_factory=lambda: NotionConfig())
+    notion: NotionConfig = Field(default_factory=lambda: NotionConfig())
     reverse_sync: ReverseSyncConfig = Field(default_factory=ReverseSyncConfig)
     plugins: PluginConfig = Field(default_factory=PluginConfig)
     web: WebConfig = Field(default_factory=WebConfig)

@@ -411,7 +411,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     # Sections users can edit from the UI. Ordered deliberately to
     # put the commonly-tweaked ones first.
-    _EDITABLE_SECTIONS = [
+    editable_sections = [
         ("remarkable", "reMarkable", "remarkable"),
         ("sync", "Sync", "sync"),
         ("processing", "Processing (AI)", "processing"),
@@ -428,17 +428,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         ("logging", "Logging", "logging"),
     ]
     # Changes to these sections require a daemon restart to take effect.
-    _RESTART_SECTIONS = {"sync", "web", "logging", "remarkable"}
+    restart_sections = {"sync", "web", "logging", "remarkable"}
 
     def _collect_secret_keys(model_cls, prefix: str = "") -> set[str]:
-        from pydantic import BaseModel as _BM
+        from pydantic import BaseModel
 
         from src.web.config_writer import is_secret_field
         keys: set[str] = set()
         for name, info in model_cls.model_fields.items():
             dotted = f"{prefix}{name}"
             anno = info.annotation
-            if isinstance(anno, type) and issubclass(anno, _BM):
+            if isinstance(anno, type) and issubclass(anno, BaseModel):
                 keys |= _collect_secret_keys(anno, prefix=f"{dotted}.")
             elif is_secret_field(name):
                 keys.add(dotted)
@@ -448,7 +448,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def settings_index(request: Request, _=Depends(_auth_check)):
         return templates.TemplateResponse(
             request, "settings.html",
-            {"sections": _EDITABLE_SECTIONS},
+            {"sections": editable_sections},
         )
 
     @app.get("/settings/{section}", response_class=HTMLResponse)
@@ -458,7 +458,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         from src.config import AppConfig as _AppCfg
         from src.web.settings_forms import build_form
 
-        if section not in {s[0] for s in _EDITABLE_SECTIONS}:
+        if section not in {s[0] for s in editable_sections}:
             raise HTTPException(status_code=404, detail="Unknown section")
 
         model_field = _AppCfg.model_fields[section]
@@ -471,7 +471,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             {
                 "section": section,
                 "form": form,
-                "restart_required": section in _RESTART_SECTIONS,
+                "restart_required": section in restart_sections,
                 "saved": request.query_params.get("saved") == "1",
                 "error": None,
             },
@@ -487,7 +487,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         from src.web.config_writer import update_section
         from src.web.settings_forms import build_form, parse_form
 
-        if section not in {s[0] for s in _EDITABLE_SECTIONS}:
+        if section not in {s[0] for s in editable_sections}:
             raise HTTPException(status_code=404, detail="Unknown section")
 
         form_raw = await request.form()
@@ -506,7 +506,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 {
                     "section": section,
                     "form": build_form(submodel, current),
-                    "restart_required": section in _RESTART_SECTIONS,
+                    "restart_required": section in restart_sections,
                     "saved": False,
                     "error": str(exc),
                 },
@@ -521,7 +521,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
         # Mutate the in-memory config for keys that don't require
         # process restart. Sync/web/logging changes show the banner.
-        if section not in _RESTART_SECTIONS:
+        if section not in restart_sections:
             setattr(config, section, submodel(**_strip_mask(updates)))
 
         # Audit trail.
