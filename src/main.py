@@ -6,7 +6,6 @@ All user-facing commands go through this Click-based CLI.
 from __future__ import annotations
 
 import asyncio
-import logging
 import sys
 from datetime import UTC
 from pathlib import Path
@@ -17,22 +16,24 @@ from src.config import AppConfig, load_config, resolve_path
 
 
 def _setup_logging(config: AppConfig) -> None:
-    """Configure logging from config settings."""
+    """Configure logging from config settings.
+
+    Honours ``REMARK_LOG_FORMAT`` env var so operators can flip to JSON
+    in production without touching config files.
+    """
+    import os
+
+    from src.log_setup import configure
+
     log_config = config.logging
-    level = getattr(logging, log_config.level, logging.INFO)
-
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
-
     log_file = resolve_path(log_config.file)
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    file_handler = logging.FileHandler(str(log_file))
-    handlers.append(file_handler)
-
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=handlers,
+    fmt = os.environ.get("REMARK_LOG_FORMAT", log_config.format)
+    configure(
+        level=log_config.level,
+        file=log_file,
+        fmt=fmt,
+        max_size_mb=log_config.max_size_mb,
+        backup_count=log_config.backup_count,
     )
 
 

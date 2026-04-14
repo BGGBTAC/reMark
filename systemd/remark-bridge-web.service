@@ -1,0 +1,34 @@
+[Unit]
+Description=reMark Bridge - Web Dashboard / PWA
+Documentation=https://github.com/BGGBTAC/reMark
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=remark
+WorkingDirectory=/home/remark/reMark
+EnvironmentFile=-/etc/remark-bridge/env
+ExecStart=/home/remark/reMark/.venv/bin/remark-bridge serve-web
+Restart=on-failure
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=remark-bridge-web
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/remark /var/lib/remark-bridge
+PrivateTmp=true
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target
