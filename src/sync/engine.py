@@ -83,6 +83,20 @@ class SyncEngine:
         self._anthropic: anthropic.AsyncAnthropic | None = None
         self._indexer = None  # Lazy — only built if search is enabled
         self._plugins = None  # Lazy plugin registry
+        # Multi-device context: the active device id for the current cycle.
+        # Set via set_device(); used when writing sync_state rows.
+        self._current_device_id: str = "default"
+        self._current_vault_subfolder: str = ""
+
+    def set_device(self, device_id: str, vault_subfolder: str = "") -> None:
+        """Switch the engine's active device context.
+
+        Multi-device installs call this before each sync_once() run so the
+        state DB records which tablet the documents came from and writes
+        land in the correct vault subfolder.
+        """
+        self._current_device_id = device_id
+        self._current_vault_subfolder = vault_subfolder
 
     @property
     def state(self) -> SyncState:
@@ -423,8 +437,12 @@ class SyncEngine:
                             plugin.metadata.name, e,
                         )
 
-            # Write to vault
-            vault_path = self.vault.resolve_path(resolved.folder_path, notebook.name)
+            # Write to vault — prefix with the active device's subfolder
+            # so multi-device installs keep their notes separated.
+            folder_path = resolved.folder_path
+            if self._current_vault_subfolder:
+                folder_path = f"{self._current_vault_subfolder}/{folder_path}"
+            vault_path = self.vault.resolve_path(folder_path, notebook.name)
             self.vault.write_note(vault_path, frontmatter, content)
 
             # Write action items
@@ -481,6 +499,7 @@ class SyncEngine:
                 ocr_engine=",".join(engines),
                 page_count=len(pages),
                 action_count=len(actions),
+                device_id=self._current_device_id,
             )
 
             # Evaluate auto-response trigger

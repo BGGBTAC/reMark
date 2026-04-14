@@ -145,6 +145,22 @@ class AuthManager:
         return self._device_token_path.exists()
 
 
+def device_token_path_for(
+    device_id: str, base_dir: str | Path = "~/.remark-bridge",
+) -> Path:
+    """Return the conventional token path for a named device.
+
+    Single-device ("default") installs keep using the flat
+    ``<base>/device_token`` file so nothing breaks on upgrade. Named
+    devices get their own directory under ``<base>/devices/<id>/`` so
+    multiple tablets can be registered side-by-side.
+    """
+    base = Path(base_dir).expanduser()
+    if device_id == "default":
+        return base / "device_token"
+    return base / "devices" / device_id / "device_token"
+
+
 def _parse_jwt_expiry(token: str) -> float:
     """Extract the 'exp' claim from a JWT without verifying signature.
 

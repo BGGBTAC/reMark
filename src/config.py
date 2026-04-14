@@ -9,11 +9,29 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+class DeviceConfig(BaseModel):
+    """Per-tablet configuration for multi-device setups.
+
+    A stable ``id`` (short slug like ``pro`` or ``rm2``) drives the token
+    file layout and the ``device_id`` column in the sync state. When no
+    devices are configured, the engine falls back to a single
+    ``default`` device that uses ``RemarkableConfig.device_token_path``.
+    """
+
+    id: str
+    label: str
+    vault_subfolder: str = ""
+    sync_folders: list[str] = Field(default_factory=list)
+    ignore_folders: list[str] = Field(default_factory=lambda: ["Trash", "Quick sheets"])
+
+
 class RemarkableConfig(BaseModel):
     device_token_path: str = "~/.remark-bridge/device_token"
     sync_folders: list[str] = Field(default_factory=list)
     ignore_folders: list[str] = Field(default_factory=lambda: ["Trash", "Quick sheets"])
     response_folder: str = "Responses"
+    # Multi-device: leave empty for the legacy single-tablet setup.
+    devices: list[DeviceConfig] = Field(default_factory=list)
 
 
 class VLMConfig(BaseModel):

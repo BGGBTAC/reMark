@@ -37,9 +37,19 @@ def _setup_logging(config: AppConfig) -> None:
     )
 
 
-def _get_auth(config: AppConfig):
-    from src.remarkable.auth import AuthManager
-    return AuthManager(resolve_path(config.remarkable.device_token_path))
+def _get_auth(config: AppConfig, device_id: str = "default"):
+    """Return an AuthManager for a specific device.
+
+    For the implicit ``default`` device we keep using the legacy
+    single-token path so existing installs keep working. Named devices
+    get their own token file under ``devices/<id>/`` alongside.
+    """
+    from src.remarkable.auth import AuthManager, device_token_path_for
+
+    if device_id == "default":
+        return AuthManager(resolve_path(config.remarkable.device_token_path))
+    base_dir = Path(config.remarkable.device_token_path).expanduser().parent
+    return AuthManager(device_token_path_for(device_id, base_dir))
 
 
 def _get_ocr_pipeline(config: AppConfig):
@@ -130,29 +140,72 @@ def sync(ctx: click.Context, once: bool) -> None:
 
 
 async def _sync_once(config: AppConfig) -> None:
+    from src.remarkable.auth import device_token_path_for
     from src.remarkable.cloud import RemarkableCloud
     from src.remarkable.documents import DocumentManager
     from src.sync.engine import SyncEngine
 
-    auth = _get_auth(config)
     engine = SyncEngine(config)
     ocr_pipeline = _get_ocr_pipeline(config)
     download_dir = resolve_path(config.sync.state_db).parent / "downloads"
 
-    async with RemarkableCloud(auth) as cloud:
-        doc_manager = DocumentManager(cloud, download_dir)
-        report = await engine.sync_once(cloud, doc_manager, ocr_pipeline)
+    # Legacy single-device path: no ``devices`` list configured, run once.
+    devices = config.remarkable.devices
+    if not devices:
+        auth = _get_auth(config)
+        async with RemarkableCloud(auth) as cloud:
+            doc_manager = DocumentManager(cloud, download_dir)
+            report = await engine.sync_once(cloud, doc_manager, ocr_pipeline)
+        click.echo(
+            f"Sync complete: {report.success_count} processed, "
+            f"{report.skipped} skipped, {report.errors} errors "
+            f"({report.duration_ms}ms)"
+        )
+        if report.errors > 0:
+            for r in report.processed:
+                if not r.success:
+                    click.echo(f"  Error: {r.doc_name} — {r.error}")
+        return
 
-    click.echo(
-        f"Sync complete: {report.success_count} processed, "
-        f"{report.skipped} skipped, {report.errors} errors "
-        f"({report.duration_ms}ms)"
-    )
-
-    if report.errors > 0:
-        for r in report.processed:
-            if not r.success:
-                click.echo(f"  Error: {r.doc_name} — {r.error}")
+    # Multi-device: iterate configured tablets. Each device has its own
+    # token file + vault subfolder so notes stay separated.
+    base_dir = Path(config.remarkable.device_token_path).expanduser().parent
+    for device in devices:
+        click.echo(f"--- device: {device.label} ({device.id}) ---")
+        engine.set_device(device.id, device.vault_subfolder)
+        # Register (or refresh) the device row so the UI picker sees it.
+        engine.state.register_device(
+            device.id,
+            device.label,
+            str(device_token_path_for(device.id, base_dir)),
+            device.vault_subfolder,
+        )
+        auth = _get_auth(config, device.id)
+        # Per-device sync_folders / ignore_folders override the top level
+        # only when the device has its own lists set.
+        orig_sync = config.remarkable.sync_folders
+        orig_ignore = config.remarkable.ignore_folders
+        if device.sync_folders:
+            config.remarkable.sync_folders = device.sync_folders
+        if device.ignore_folders:
+            config.remarkable.ignore_folders = device.ignore_folders
+        try:
+            async with RemarkableCloud(auth) as cloud:
+                doc_manager = DocumentManager(cloud, download_dir)
+                report = await engine.sync_once(cloud, doc_manager, ocr_pipeline)
+            engine.state.touch_device(device.id)
+            click.echo(
+                f"  {device.label}: {report.success_count} processed, "
+                f"{report.skipped} skipped, {report.errors} errors "
+                f"({report.duration_ms}ms)"
+            )
+            if report.errors > 0:
+                for r in report.processed:
+                    if not r.success:
+                        click.echo(f"    Error: {r.doc_name} — {r.error}")
+        finally:
+            config.remarkable.sync_folders = orig_sync
+            config.remarkable.ignore_folders = orig_ignore
 
 
 async def _sync_continuous(config: AppConfig) -> None:
@@ -1091,6 +1144,105 @@ async def _migrate_all(config: AppConfig) -> None:
         f"\nMigration complete: {report.success_count} imported, "
         f"{report.errors} errors ({report.duration_ms}ms)"
     )
+
+
+@cli.group()
+def device() -> None:
+    """Manage registered reMarkable tablets (multi-device setups)."""
+
+
+@device.command("add")
+@click.option("--id", "device_id", required=True, help="Stable slug, e.g. 'pro' or 'rm2'")
+@click.option("--label", required=True, help="Human-readable name for the tablet")
+@click.option(
+    "--subfolder", default="",
+    help="Subfolder under the vault to write this device's notes into",
+)
+@click.option(
+    "--code", default=None,
+    help="One-time pairing code from my.remarkable.com — optional, run without "
+         "to register later with `remark-bridge auth --device <id>`",
+)
+@click.pass_context
+def device_add(
+    ctx: click.Context,
+    device_id: str,
+    label: str,
+    subfolder: str,
+    code: str | None,
+) -> None:
+    """Register a new reMarkable tablet."""
+    config: AppConfig = ctx.obj["config"]
+    _setup_logging(config)
+    from src.remarkable.auth import device_token_path_for
+    from src.sync.state import SyncState
+
+    base_dir = Path(config.remarkable.device_token_path).expanduser().parent
+    token_path = device_token_path_for(device_id, base_dir)
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        state.register_device(device_id, label, str(token_path), subfolder)
+    finally:
+        state.close()
+
+    click.echo(f"Registered device '{label}' (id={device_id}).")
+    click.echo(f"  Token path:      {token_path}")
+    click.echo(f"  Vault subfolder: {subfolder or '(none)'}")
+
+    if code:
+        auth = _get_auth(config, device_id)
+        asyncio.run(auth.register_device(code))
+        click.echo(f"  Paired — token stored at {token_path}")
+    else:
+        click.echo("  To pair now, run:")
+        click.echo(f"    remark-bridge auth --device {device_id}")
+    click.echo(
+        "  Add a matching entry under remarkable.devices in config.yaml "
+        "so `sync` iterates this tablet."
+    )
+
+
+@device.command("list")
+@click.pass_context
+def device_list(ctx: click.Context) -> None:
+    """List registered tablets."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        rows = state.list_devices(active_only=False)
+    finally:
+        state.close()
+
+    if not rows:
+        click.echo("No devices registered.")
+        return
+    for row in rows:
+        active = "active" if row["active"] else "inactive"
+        last = row.get("last_sync_at") or "never"
+        click.echo(
+            f"  {row['id']:<12} {row['label']:<24} "
+            f"subfolder={row['vault_subfolder'] or '-':<12} "
+            f"[{active}]  last_sync={last}"
+        )
+
+
+@device.command("remove")
+@click.option("--id", "device_id", required=True)
+@click.pass_context
+def device_remove(ctx: click.Context, device_id: str) -> None:
+    """Deactivate a registered tablet (history is preserved)."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        state.deactivate_device(device_id)
+    finally:
+        state.close()
+    click.echo(f"Device '{device_id}' deactivated.")
 
 
 if __name__ == "__main__":
