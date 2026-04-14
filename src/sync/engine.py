@@ -82,6 +82,7 @@ class SyncEngine:
         self._git: GitSync | None = None
         self._anthropic: anthropic.AsyncAnthropic | None = None
         self._indexer = None  # Lazy — only built if search is enabled
+        self._plugins = None  # Lazy plugin registry
 
     @property
     def state(self) -> SyncState:
@@ -118,6 +119,15 @@ class SyncEngine:
                 client, self._config.processing.model, self.state,
             )
         return self._anthropic
+
+    @property
+    def plugins(self):
+        """Lazy-load the plugin registry."""
+        if self._plugins is None:
+            from src.plugins.registry import PluginRegistry
+            self._plugins = PluginRegistry(self._config.plugins)
+            self._plugins.discover()
+        return self._plugins
 
     def _get_indexer(self):
         """Lazy-build the search indexer. Returns None if search is disabled."""
@@ -216,6 +226,15 @@ class SyncEngine:
             len(docs), len(to_process), report.skipped,
         )
 
+        # Fire pre-sync plugin hooks
+        if self._config.plugins.enabled:
+            from src.plugins.hooks import SyncHook
+            for plugin in self.plugins.hooks(SyncHook):
+                try:
+                    await plugin.before_sync({"docs_found": len(docs)})
+                except Exception as e:
+                    logger.warning("SyncHook '%s' before_sync failed: %s", plugin.metadata.name, e)
+
         # 3. Detect deletions — docs in state but no longer on Cloud
         cloud_ids = {doc.id for doc in docs if not doc.is_folder}
         archived_count = 0
@@ -236,7 +255,23 @@ class SyncEngine:
         if self._config.sync.push_responses:
             await self.push_pending_responses(cloud)
 
-        # 5. Git commit + push
+        # 5b. Reverse-sync: push vault notes back to the tablet
+        if self._config.reverse_sync.enabled:
+            try:
+                from src.sync.reverse_sync import ReverseSyncer
+                syncer = ReverseSyncer(
+                    self._config.reverse_sync, self.vault, self.state,
+                )
+                rev = await syncer.run(cloud)
+                if rev.total > 0:
+                    logger.info(
+                        "Reverse-sync: %d pushed, %d failed",
+                        len(rev.pushed), len(rev.failed),
+                    )
+            except Exception as e:
+                logger.warning("Reverse-sync failed: %s", e)
+
+        # 6. Git commit + push
         if report.success_count > 0 and self.git:
             if self._config.obsidian.git.auto_commit:
                 self.git.commit(report.success_count)
@@ -248,6 +283,25 @@ class SyncEngine:
             "Sync complete: %d processed, %d skipped, %d errors (%dms)",
             report.success_count, report.skipped, report.errors, report.duration_ms,
         )
+
+        # Fire post-sync plugin hooks
+        if self._config.plugins.enabled:
+            from src.plugins.hooks import SyncHook
+            report_dict = {
+                "total": report.total,
+                "success": report.success_count,
+                "skipped": report.skipped,
+                "errors": report.errors,
+                "duration_ms": report.duration_ms,
+            }
+            for plugin in self.plugins.hooks(SyncHook):
+                try:
+                    await plugin.after_sync({"docs_found": len(docs)}, report_dict)
+                except Exception as e:
+                    logger.warning(
+                        "SyncHook '%s' after_sync failed: %s",
+                        plugin.metadata.name, e,
+                    )
 
         return report
 
@@ -338,6 +392,37 @@ class SyncEngine:
                 page_texts=ocr_results,
             )
 
+            # Template detection — if the synced doc was pushed as a template,
+            # extract structured fields into frontmatter.
+            if self._config.templates.enabled:
+                template_entry = self.state.get_template_for_doc(doc.id)
+                if template_entry:
+                    try:
+                        from src.templates.engine import TemplateEngine
+                        engine = TemplateEngine(self._config.templates.user_templates_dir)
+                        template = engine.get(template_entry["template_name"])
+                        if template is not None:
+                            extracted = engine.extract_fields(
+                                template.name, structured.content_md,
+                            )
+                            if extracted:
+                                frontmatter["template"] = template.name
+                                frontmatter["template_fields"] = extracted
+                    except Exception as e:
+                        logger.warning("Template extraction failed for %s: %s", doc.name, e)
+
+            # Plugin note-processors (last chance to mutate content/frontmatter)
+            if self._config.plugins.enabled:
+                from src.plugins.hooks import NoteProcessorHook
+                for plugin in self.plugins.hooks(NoteProcessorHook):
+                    try:
+                        content, frontmatter = await plugin.process(content, frontmatter)
+                    except Exception as e:
+                        logger.warning(
+                            "NoteProcessor plugin '%s' failed: %s",
+                            plugin.metadata.name, e,
+                        )
+
             # Write to vault
             vault_path = self.vault.resolve_path(resolved.folder_path, notebook.name)
             self.vault.write_note(vault_path, frontmatter, content)
@@ -354,11 +439,11 @@ class SyncEngine:
                 except Exception as e:
                     logger.warning("Indexing failed for %s: %s", doc.name, e)
 
-            # Microsoft integration: push action items to To Do / Calendar
-            if actions and self._config.microsoft.enabled:
+            # Microsoft integration: push action items to To Do / Calendar / OneNote
+            if self._config.microsoft.enabled:
                 from src.integrations.microsoft.service import MicrosoftService
                 ms_service = MicrosoftService(self._config.microsoft)
-                if ms_service.enabled:
+                if ms_service.enabled and actions:
                     ms_result = await ms_service.sync_actions(actions, source_note=notebook.name)
                     for task_id in ms_result.tasks_created:
                         self.state.record_external_link(
@@ -368,6 +453,22 @@ class SyncEngine:
                         self.state.record_external_link(
                             doc.id, "microsoft_calendar", "event", event_id,
                         )
+
+                # OneNote parallel write (if enabled)
+                if self._config.microsoft.onenote.enabled:
+                    try:
+                        page_id = await ms_service.write_to_onenote(
+                            title=notebook.name,
+                            content=content,
+                            folder=resolved.folder_path,
+                            tags=tags,
+                        )
+                        if page_id:
+                            self.state.record_external_link(
+                                doc.id, "microsoft_onenote", "page", page_id,
+                            )
+                    except Exception as e:
+                        logger.warning("OneNote mirror failed for %s: %s", doc.name, e)
 
             # Update state
             engines = list({r.engine_used for r in ocr_results if r.engine_used != "none"})

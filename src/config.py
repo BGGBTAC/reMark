@@ -96,8 +96,30 @@ class ResponseConfig(BaseModel):
     response_folder: str = "Responses"
 
 
+class OneNoteConfig(BaseModel):
+    """OneNote vault — parallel target alongside Obsidian."""
+    enabled: bool = False
+    notebook_name: str = "reMark"          # OneNote notebook to use
+    default_section: str = "Inbox"
+    # Map reMarkable folder -> OneNote section. "_default" for fallback.
+    folder_map: dict[str, str] = Field(default_factory=lambda: {"_default": "Inbox"})
+    create_missing_sections: bool = True
+
+
+class TeamsConfig(BaseModel):
+    """Microsoft Teams integration (digest posts + meeting correlation)."""
+    enabled: bool = False
+    # Incoming Webhook URL of the target channel (simplest auth model)
+    webhook_url: str = ""
+    # Cadence for the digest: "daily" | "weekly" | "off"
+    digest_cadence: str = "weekly"
+    digest_hour: int = 9                   # hour of the day (UTC) when digest fires
+    digest_weekday: int = 1                # 1 = Monday, for weekly
+    meeting_correlation: bool = True       # link meeting notes to Outlook events
+
+
 class MicrosoftConfig(BaseModel):
-    """Microsoft Graph integration (Outlook Tasks + Calendar)."""
+    """Microsoft Graph integration (Outlook Tasks + Calendar + OneNote + Teams)."""
     enabled: bool = False
 
     # Azure AD application registration
@@ -117,6 +139,12 @@ class MicrosoftConfig(BaseModel):
     calendar_enabled: bool = False
     calendar_id: str = ""               # empty = default calendar
 
+    # OneNote (v0.3+)
+    onenote: OneNoteConfig = Field(default_factory=OneNoteConfig)
+
+    # Teams (v0.3+)
+    teams: TeamsConfig = Field(default_factory=TeamsConfig)
+
 
 class SearchConfig(BaseModel):
     """Semantic search / RAG configuration."""
@@ -130,6 +158,61 @@ class SearchConfig(BaseModel):
     min_score: float = 0.3
     synthesize_answer: bool = True
     synthesis_model: str = "claude-sonnet-4-20250514"
+
+
+class ReverseSyncConfig(BaseModel):
+    """Obsidian → reMarkable reverse sync — all three triggers are independent."""
+    enabled: bool = False
+    # Trigger A: any note with `push_to_tablet: true` in frontmatter
+    trigger_on_frontmatter: bool = True
+    # Trigger B: any note inside the configured folder (relative to vault)
+    trigger_on_folder: bool = True
+    folder: str = "To-Tablet"
+    # Trigger C: on-demand queue via CLI / dashboard
+    trigger_on_demand: bool = True
+
+    # Output format and destination folder on the tablet
+    format: str = "pdf"                     # "pdf" | "notebook"
+    target_folder: str = "From-Vault"
+
+    # After pushing, stamp the note with pushed_to_tablet_at timestamp
+    stamp_frontmatter: bool = True
+
+
+class PluginConfig(BaseModel):
+    """Plugin system configuration."""
+    enabled: bool = True
+    # Directory scanned for plugin modules/packages
+    plugin_dir: str = "~/.config/remark/plugins"
+    # List of plugin names to disable (overrides auto-discovery)
+    disabled: list[str] = Field(default_factory=list)
+    # Extra named configs forwarded to individual plugins
+    settings: dict[str, dict] = Field(default_factory=dict)
+
+
+class WebConfig(BaseModel):
+    """Web dashboard + PWA configuration."""
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8080
+    # Basic HTTP auth (set both to enable). Empty = no auth (localhost only!)
+    username: str = ""
+    password: str = ""
+    # Branding / app name
+    app_name: str = "reMark"
+    # PWA: VAPID keys for Web Push (generate with `remark-bridge vapid-keys`)
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:admin@example.com"
+
+
+class TemplatesConfig(BaseModel):
+    """On-device template engine configuration."""
+    enabled: bool = True
+    # Directory with user-defined template YAML files
+    user_templates_dir: str = "~/.remark-bridge/templates"
+    # Folder on the tablet where pushed templates appear
+    target_folder: str = "Templates"
 
 
 class LoggingConfig(BaseModel):
@@ -148,6 +231,10 @@ class AppConfig(BaseModel):
     response: ResponseConfig = Field(default_factory=ResponseConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     microsoft: MicrosoftConfig = Field(default_factory=MicrosoftConfig)
+    reverse_sync: ReverseSyncConfig = Field(default_factory=ReverseSyncConfig)
+    plugins: PluginConfig = Field(default_factory=PluginConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
+    templates: TemplatesConfig = Field(default_factory=TemplatesConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 

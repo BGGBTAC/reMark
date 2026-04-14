@@ -1,0 +1,24 @@
+name: meeting
+description: Structured template for meeting notes (attendees, agenda, decisions, actions).
+title_prefix: "Meeting"
+fields:
+  - name: date
+    heading: Date
+    type: date
+    hint: YYYY-MM-DD
+  - name: attendees
+    heading: Attendees
+    type: list
+    hint: One name per line
+  - name: agenda
+    heading: Agenda
+    type: list
+  - name: discussion
+    heading: Discussion
+    type: text
+  - name: decisions
+    heading: Decisions
+    type: list
+  - name: actions
+    heading: Action items
+    type: checklist

@@ -71,6 +71,45 @@ CREATE TABLE IF NOT EXISTS api_usage (
 );
 CREATE INDEX IF NOT EXISTS idx_api_usage_time ON api_usage(timestamp);
 CREATE INDEX IF NOT EXISTS idx_api_usage_provider ON api_usage(provider);
+
+CREATE TABLE IF NOT EXISTS reverse_push_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vault_path TEXT NOT NULL UNIQUE,
+    queued_at TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    remarkable_doc_id TEXT,
+    pushed_at TEXT,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_reverse_push_status ON reverse_push_queue(status);
+
+CREATE TABLE IF NOT EXISTS webpush_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    user_agent TEXT,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS plugin_state (
+    name TEXT PRIMARY KEY,
+    enabled INTEGER DEFAULT 1,
+    config TEXT,
+    installed_at TEXT NOT NULL,
+    last_used_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS template_instances (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id TEXT NOT NULL,
+    template_name TEXT NOT NULL,
+    pushed_at TEXT NOT NULL,
+    filled_at TEXT,
+    vault_path TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_template_doc ON template_instances(doc_id);
 """
 
 
@@ -376,6 +415,139 @@ class SyncState:
             "total_calls": total_calls,
             "days": days,
         }
+
+    # -- Reverse push queue --
+
+    def enqueue_reverse_push(self, vault_path: str) -> bool:
+        """Queue a vault note to be pushed to reMarkable. Returns True if newly queued."""
+        now = datetime.now(UTC).isoformat()
+        cursor = self.conn.execute(
+            """INSERT OR IGNORE INTO reverse_push_queue
+               (vault_path, queued_at, status) VALUES (?, ?, 'pending')""",
+            (vault_path, now),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def get_reverse_queue(self, status: str = "pending") -> list[dict]:
+        """Get entries from the reverse-push queue."""
+        rows = self.conn.execute(
+            "SELECT * FROM reverse_push_queue WHERE status = ? ORDER BY queued_at",
+            (status,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_reverse_pushed(self, vault_path: str, remarkable_doc_id: str) -> None:
+        """Mark a queued push as successful."""
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            """UPDATE reverse_push_queue
+               SET status = 'pushed', remarkable_doc_id = ?, pushed_at = ?
+               WHERE vault_path = ?""",
+            (remarkable_doc_id, now, vault_path),
+        )
+        self.conn.commit()
+
+    def mark_reverse_failed(self, vault_path: str, error: str) -> None:
+        """Mark a queued push as failed with error message."""
+        self.conn.execute(
+            "UPDATE reverse_push_queue SET status = 'error', error = ? WHERE vault_path = ?",
+            (error, vault_path),
+        )
+        self.conn.commit()
+
+    # -- Web push subscriptions --
+
+    def add_webpush_subscription(
+        self, endpoint: str, p256dh: str, auth: str, user_agent: str = "",
+    ) -> int:
+        """Register a Web Push subscription. Returns the row ID."""
+        now = datetime.now(UTC).isoformat()
+        cursor = self.conn.execute(
+            """INSERT OR REPLACE INTO webpush_subscriptions
+               (endpoint, p256dh, auth, user_agent, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (endpoint, p256dh, auth, user_agent, now),
+        )
+        self.conn.commit()
+        return cursor.lastrowid or 0
+
+    def list_webpush_subscriptions(self) -> list[dict]:
+        """Return all active subscriptions."""
+        rows = self.conn.execute("SELECT * FROM webpush_subscriptions").fetchall()
+        return [dict(r) for r in rows]
+
+    def remove_webpush_subscription(self, endpoint: str) -> None:
+        """Remove a subscription (e.g. after 410 Gone response)."""
+        self.conn.execute(
+            "DELETE FROM webpush_subscriptions WHERE endpoint = ?", (endpoint,),
+        )
+        self.conn.commit()
+
+    # -- Plugin state --
+
+    def register_plugin(self, name: str, config: str = "") -> None:
+        """Record that a plugin has been loaded."""
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            """INSERT OR IGNORE INTO plugin_state (name, config, installed_at)
+               VALUES (?, ?, ?)""",
+            (name, config, now),
+        )
+        self.conn.commit()
+
+    def set_plugin_enabled(self, name: str, enabled: bool) -> None:
+        """Enable or disable a plugin."""
+        self.conn.execute(
+            "UPDATE plugin_state SET enabled = ? WHERE name = ?",
+            (1 if enabled else 0, name),
+        )
+        self.conn.commit()
+
+    def list_plugins(self) -> list[dict]:
+        """List all registered plugins."""
+        rows = self.conn.execute("SELECT * FROM plugin_state").fetchall()
+        return [dict(r) for r in rows]
+
+    def is_plugin_enabled(self, name: str) -> bool:
+        """Check if a plugin is enabled. Defaults to True if not yet registered."""
+        row = self.conn.execute(
+            "SELECT enabled FROM plugin_state WHERE name = ?", (name,),
+        ).fetchone()
+        if row is None:
+            return True
+        return bool(row["enabled"])
+
+    # -- Template instances --
+
+    def record_template_push(
+        self, doc_id: str, template_name: str,
+    ) -> None:
+        """Record that a template was pushed to the tablet."""
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            """INSERT INTO template_instances
+               (doc_id, template_name, pushed_at) VALUES (?, ?, ?)""",
+            (doc_id, template_name, now),
+        )
+        self.conn.commit()
+
+    def mark_template_filled(self, doc_id: str, vault_path: str) -> None:
+        """Record that a template was filled on the tablet and extracted to vault."""
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            """UPDATE template_instances
+               SET filled_at = ?, vault_path = ? WHERE doc_id = ?""",
+            (now, vault_path, doc_id),
+        )
+        self.conn.commit()
+
+    def get_template_for_doc(self, doc_id: str) -> dict | None:
+        """Look up whether a document was a pushed template."""
+        row = self.conn.execute(
+            "SELECT * FROM template_instances WHERE doc_id = ?", (doc_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
     def mark_external_link_completed(self, provider: str, external_id: str) -> None:
         """Mark an external link as completed (e.g. task was marked done)."""

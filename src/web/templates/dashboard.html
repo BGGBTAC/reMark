@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-semibold mb-6">Dashboard</h1>
+
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+  <div class="bg-white rounded-lg shadow-sm p-4">
+    <div class="text-xs text-gray-500 uppercase tracking-wide">Documents</div>
+    <div class="text-2xl font-semibold mt-1">{{ stats.total_docs }}</div>
+    <div class="text-xs text-gray-500 mt-1">{{ stats.synced }} synced · {{ stats.errors }} errors</div>
+  </div>
+  <div class="bg-white rounded-lg shadow-sm p-4">
+    <div class="text-xs text-gray-500 uppercase tracking-wide">Pages</div>
+    <div class="text-2xl font-semibold mt-1">{{ stats.total_pages }}</div>
+  </div>
+  <div class="bg-white rounded-lg shadow-sm p-4">
+    <div class="text-xs text-gray-500 uppercase tracking-wide">Action items</div>
+    <div class="text-2xl font-semibold mt-1">{{ stats.total_actions }}</div>
+  </div>
+  <div class="bg-white rounded-lg shadow-sm p-4">
+    <div class="text-xs text-gray-500 uppercase tracking-wide">API cost (30d)</div>
+    <div class="text-2xl font-semibold mt-1">${{ "%.2f" | format(usage.total_cost_usd) }}</div>
+    <div class="text-xs text-gray-500 mt-1">{{ usage.total_calls }} calls</div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+  <div class="bg-white rounded-lg shadow-sm p-4">
+    <h2 class="font-semibold mb-3">Recent notes</h2>
+    {% if recent_notes %}
+    <ul class="divide-y">
+      {% for n in recent_notes %}
+      <li class="py-2">
+        <a href="/notes/{{ n.path }}" class="block hover:bg-gray-50 rounded px-1">
+          <div class="font-medium">{{ n.title }}</div>
+          {% if n.summary %}<div class="text-xs text-gray-500 mt-0.5">{{ n.summary }}</div>{% endif %}
+          <div class="text-xs text-gray-400 mt-0.5">{{ n.modified }}</div>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-500">No notes synced yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="bg-white rounded-lg shadow-sm p-4">
+    <h2 class="font-semibold mb-3">Recent activity</h2>
+    {% if recent_log %}
+    <ul class="divide-y text-sm">
+      {% for entry in recent_log %}
+      <li class="py-2">
+        <span class="inline-block w-16 text-xs font-medium text-gray-600">{{ entry.action }}</span>
+        <span class="text-gray-800">{{ entry.details }}</span>
+        <div class="text-xs text-gray-400">{{ entry.timestamp }}</div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-500">No activity recorded yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if usage.providers %}
+<div class="mt-6 bg-white rounded-lg shadow-sm p-4">
+  <h2 class="font-semibold mb-3">API usage by provider (30 days)</h2>
+  <table class="w-full text-sm">
+    <thead class="text-xs text-gray-500 uppercase">
+      <tr><th class="text-left py-2">Provider</th><th class="text-right py-2">Calls</th>
+        <th class="text-right py-2">Input tokens</th><th class="text-right py-2">Output tokens</th>
+        <th class="text-right py-2">Cost</th></tr>
+    </thead>
+    <tbody>
+      {% for name, info in usage.providers.items() %}
+      <tr class="border-t">
+        <td class="py-2">{{ name }}</td>
+        <td class="text-right">{{ info.calls }}</td>
+        <td class="text-right">{{ info.input_tokens }}</td>
+        <td class="text-right">{{ info.output_tokens }}</td>
+        <td class="text-right">${{ "%.2f" | format(info.cost_usd) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

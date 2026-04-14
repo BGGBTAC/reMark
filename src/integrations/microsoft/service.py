@@ -124,6 +124,32 @@ class MicrosoftService:
 
         return result
 
+    async def write_to_onenote(
+        self,
+        title: str,
+        content: str,
+        folder: str = "",
+        tags: list[str] | None = None,
+    ) -> str | None:
+        """Write a note to OneNote if enabled. Returns the page ID."""
+        if not self._config.enabled or not self._config.onenote.enabled:
+            return None
+
+        try:
+            auth = self._get_auth()
+            if not auth.has_cached_token():
+                return None
+
+            from src.integrations.microsoft.onenote import OneNoteClient
+
+            async with GraphClient(auth) as graph:
+                client = OneNoteClient(graph, self._config.onenote)
+                page = await client.write_page(title, content, folder, tags)
+                return page.id
+        except Exception as e:
+            logger.warning("OneNote write failed: %s", e)
+            return None
+
     async def check_completed_tasks(self, task_ids: list[str]) -> list[str]:
         """Return which of the given Graph task IDs are completed."""
         if not self.enabled or not self._config.todo_enabled or not task_ids:

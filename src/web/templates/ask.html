@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Ask — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-semibold mb-6">Ask your notes</h1>
+
+{% if not search_enabled %}
+<div class="bg-yellow-50 border border-yellow-200 rounded p-4 text-sm text-yellow-800 mb-6">
+  Search is currently disabled. Enable it in <code>config.yaml</code> under
+  <code>search.enabled: true</code>, then run <code>remark-bridge reindex</code>.
+</div>
+{% endif %}
+
+<form method="post" class="flex gap-2 mb-6">
+  <input type="text" name="query" value="{{ query or '' }}"
+         placeholder="What did I note about...?"
+         autocomplete="off"
+         class="flex-1 rounded border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+  <button type="submit" class="bg-blue-600 text-white text-sm px-4 py-2 rounded">Ask</button>
+</form>
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 rounded p-4 text-sm text-red-800 mb-6">{{ error }}</div>
+{% endif %}
+
+{% if answer %}
+<div class="bg-white rounded-lg shadow-sm p-4 mb-6">
+  <h2 class="font-semibold text-sm mb-2">Answer</h2>
+  <div class="prose prose-sm max-w-none whitespace-pre-wrap">{{ answer }}</div>
+</div>
+{% endif %}
+
+{% if hits %}
+<div class="bg-white rounded-lg shadow-sm divide-y">
+  <div class="p-4 font-semibold text-sm">Sources ({{ hits | length }})</div>
+  {% for hit in hits %}
+  <div class="p-4">
+    <div class="flex justify-between items-baseline">
+      <a href="/notes/{{ hit.path }}" class="font-medium text-blue-600 hover:underline">{{ hit.title }}</a>
+      <span class="text-xs text-gray-400">score {{ hit.score }}</span>
+    </div>
+    {% if hit.heading %}
+    <div class="text-xs text-gray-500 mt-0.5">{{ hit.heading }}</div>
+    {% endif %}
+    <div class="text-sm text-gray-700 mt-2">{{ hit.preview }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,25 @@
+name: project-review
+description: Periodic project review — status, progress, blockers, next steps.
+title_prefix: "Project Review"
+fields:
+  - name: project
+    heading: Project
+    type: text
+  - name: date
+    heading: Date
+    type: date
+  - name: goals
+    heading: Current goals
+    type: list
+  - name: progress
+    heading: Progress since last review
+    type: text
+  - name: blockers
+    heading: Blockers
+    type: list
+  - name: next_steps
+    heading: Next steps
+    type: checklist
+  - name: notes
+    heading: Notes
+    type: text

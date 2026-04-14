@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from datetime import UTC
 from pathlib import Path
 
 import click
@@ -446,6 +447,336 @@ async def _ask(config: AppConfig, query: str, top_k: int, with_answer: bool) -> 
         if len(preview) > 200:
             preview = preview[:200] + "..."
         click.echo(f"    {preview}\n")
+
+
+@cli.command(name="push-note")
+@click.argument("note_name")
+@click.option(
+    "--format", "format_",
+    type=click.Choice(["pdf", "notebook"]),
+    default=None,
+    help="Output format. Defaults to config.reverse_sync.format.",
+)
+@click.pass_context
+def push_note(ctx: click.Context, note_name: str, format_: str | None) -> None:
+    """Push a vault note to the reMarkable tablet."""
+    config = ctx.obj["config"]
+    _setup_logging(config)
+
+    if format_:
+        config.reverse_sync.format = format_
+
+    asyncio.run(_push_note(config, note_name))
+
+
+async def _push_note(config: AppConfig, note_name: str) -> None:
+    from src.remarkable.cloud import RemarkableCloud
+    from src.sync.engine import SyncEngine
+    from src.sync.reverse_sync import ReverseSyncer
+
+    engine = SyncEngine(config)
+    auth = _get_auth(config)
+
+    vault_path = Path(config.obsidian.vault_path).expanduser()
+    target = None
+    for md in vault_path.rglob("*.md"):
+        result = engine.vault.read_note(md)
+        if result is None:
+            continue
+        fm, _ = result
+        if fm.get("title") == note_name or md.stem == note_name:
+            target = md
+            break
+
+    if target is None:
+        click.echo(f"Note '{note_name}' not found in vault.")
+        return
+
+    syncer = ReverseSyncer(config.reverse_sync, engine.vault, engine.state)
+    async with RemarkableCloud(auth) as cloud:
+        rm_doc_id = await syncer.push_single(target, cloud)
+
+    if rm_doc_id:
+        click.echo(f"Pushed '{note_name}' to tablet '{config.reverse_sync.target_folder}' folder.")
+    else:
+        click.echo("Push failed (see logs).")
+
+
+@cli.command(name="list-reverse-queue")
+@click.option("--status", default="pending", help="pending | pushed | error")
+@click.pass_context
+def list_reverse_queue(ctx: click.Context, status: str) -> None:
+    """Show the reverse-sync queue."""
+    config = ctx.obj["config"]
+    state = SyncState(resolve_path(config.sync.state_db))
+    entries = state.get_reverse_queue(status=status)
+
+    if not entries:
+        click.echo(f"No entries with status '{status}'.")
+        state.close()
+        return
+
+    click.echo(f"\n{len(entries)} entries:\n")
+    for e in entries:
+        click.echo(f"  {e['vault_path']}")
+        click.echo(f"    Queued: {e['queued_at']}  Status: {e['status']}")
+        if e.get("remarkable_doc_id"):
+            click.echo(f"    Pushed: {e['pushed_at']} → {e['remarkable_doc_id'][:8]}")
+        if e.get("error"):
+            click.echo(f"    Error: {e['error']}")
+        click.echo()
+    state.close()
+
+
+@cli.group()
+def template() -> None:
+    """Manage on-device note templates."""
+
+
+@template.command("list")
+@click.pass_context
+def template_list(ctx: click.Context) -> None:
+    """List available templates."""
+    config = ctx.obj["config"]
+    from src.templates.engine import TemplateEngine
+
+    engine = TemplateEngine(config.templates.user_templates_dir)
+    templates = engine.list_templates()
+
+    if not templates:
+        click.echo("No templates found.")
+        return
+
+    click.echo(f"\n{len(templates)} template(s):\n")
+    for t in templates:
+        click.echo(f"  {t.name}")
+        if t.description:
+            click.echo(f"    {t.description}")
+        click.echo(f"    Fields: {', '.join(f.name for f in t.fields)}")
+        click.echo()
+
+
+@template.command("push")
+@click.argument("name")
+@click.option("--folder", default=None, help="reMarkable folder (defaults to config)")
+@click.pass_context
+def template_push(ctx: click.Context, name: str, folder: str | None) -> None:
+    """Render a template and push it as a fillable PDF to the tablet."""
+    config = ctx.obj["config"]
+    _setup_logging(config)
+
+    from datetime import datetime
+
+    from src.templates.engine import TemplateEngine
+
+    engine = TemplateEngine(config.templates.user_templates_dir)
+    if engine.get(name) is None:
+        click.echo(f"Template '{name}' not found. Available:")
+        for t in engine.list_templates():
+            click.echo(f"  - {t.name}")
+        return
+
+    today = datetime.now(UTC).date().isoformat()
+    pdf_bytes = engine.render_pdf(name, extra_values={"date": today})
+
+    target_folder = folder or config.templates.target_folder
+    asyncio.run(_push_template(config, name, pdf_bytes, target_folder))
+
+
+async def _push_template(
+    config: AppConfig, name: str, pdf_bytes: bytes, target_folder: str,
+) -> None:
+    from src.remarkable.cloud import RemarkableCloud
+    from src.response.uploader import ResponseUploader
+
+    auth = _get_auth(config)
+    async with RemarkableCloud(auth) as cloud:
+        uploader = ResponseUploader(cloud, response_folder=target_folder)
+        title = f"Template — {name.title()}"
+        doc_id = await uploader.upload_pdf(pdf_bytes, title)
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    state.record_template_push(doc_id, name)
+    state.close()
+
+    click.echo(f"Pushed template '{name}' to folder '{target_folder}' (doc {doc_id[:8]})")
+
+
+@cli.group()
+def plugins() -> None:
+    """Manage reMark plugins."""
+
+
+@plugins.command("list")
+@click.pass_context
+def plugins_list(ctx: click.Context) -> None:
+    """List discovered plugins."""
+    config = ctx.obj["config"]
+    from src.plugins.registry import PluginRegistry
+
+    registry = PluginRegistry(config.plugins)
+    registry.discover()
+    entries = registry.list_plugins()
+
+    if not entries:
+        click.echo("No plugins found.")
+        click.echo(f"(plugin_dir: {config.plugins.plugin_dir})")
+        return
+
+    click.echo(f"\nLoaded {len(entries)} plugin(s):\n")
+    for p in entries:
+        hooks_str = ", ".join(p["hooks"]) or "(no hooks)"
+        click.echo(f"  {p['name']} v{p['version']}")
+        if p["description"]:
+            click.echo(f"    {p['description']}")
+        click.echo(f"    Hooks: {hooks_str}")
+        if p["author"]:
+            click.echo(f"    Author: {p['author']}")
+        click.echo()
+
+
+@plugins.command("disable")
+@click.argument("name")
+@click.pass_context
+def plugins_disable(ctx: click.Context, name: str) -> None:
+    """Disable a plugin by name."""
+    config = ctx.obj["config"]
+    state = SyncState(resolve_path(config.sync.state_db))
+    state.register_plugin(name)
+    state.set_plugin_enabled(name, False)
+    state.close()
+    click.echo(f"Disabled plugin '{name}'. "
+               f"Also add it to config.plugins.disabled to persist across DB resets.")
+
+
+@plugins.command("enable")
+@click.argument("name")
+@click.pass_context
+def plugins_enable(ctx: click.Context, name: str) -> None:
+    """Enable a previously disabled plugin."""
+    config = ctx.obj["config"]
+    state = SyncState(resolve_path(config.sync.state_db))
+    state.register_plugin(name)
+    state.set_plugin_enabled(name, True)
+    state.close()
+    click.echo(f"Enabled plugin '{name}'.")
+
+
+@plugins.command("info")
+@click.argument("name")
+@click.pass_context
+def plugins_info(ctx: click.Context, name: str) -> None:
+    """Show details for a single plugin."""
+    config = ctx.obj["config"]
+    from src.plugins.registry import PluginRegistry
+
+    registry = PluginRegistry(config.plugins)
+    registry.discover()
+    plugin = registry.get(name)
+    if plugin is None:
+        click.echo(f"Plugin '{name}' not found.")
+        return
+
+    meta = plugin.metadata
+    click.echo(f"\nPlugin: {meta.name}")
+    click.echo(f"Version: {meta.version}")
+    if meta.description:
+        click.echo(f"Description: {meta.description}")
+    if meta.author:
+        click.echo(f"Author: {meta.author}")
+    from src.plugins.hooks import (
+        ActionExtractorHook,
+        NoteProcessorHook,
+        OCRBackendHook,
+        SyncHook,
+    )
+    hooks = []
+    for cls in (ActionExtractorHook, OCRBackendHook, NoteProcessorHook, SyncHook):
+        if isinstance(plugin, cls):
+            hooks.append(cls.__name__)
+    click.echo(f"Hooks: {', '.join(hooks) or '(none)'}")
+
+
+# Also expose `SyncState` here for plugin subcommands
+from src.sync.state import SyncState  # noqa: E402
+
+
+@cli.command()
+@click.option("--teams/--no-teams", default=True, help="Post the digest to Teams")
+@click.option("--period", default="weekly", type=click.Choice(["daily", "weekly"]))
+@click.pass_context
+def digest(ctx: click.Context, teams: bool, period: str) -> None:
+    """Build and optionally post a Teams digest of recent activity."""
+    config = ctx.obj["config"]
+    _setup_logging(config)
+
+    asyncio.run(_digest(config, period, teams))
+
+
+async def _digest(config: AppConfig, period: str, teams: bool) -> None:
+    from src.integrations.microsoft.teams import build_digest, post_digest
+    from src.obsidian.vault import ObsidianVault
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    vault = ObsidianVault(
+        Path(config.obsidian.vault_path).expanduser(),
+        config.obsidian.folder_map,
+    )
+
+    digest_data = build_digest(state, vault, period=period)
+    state.close()
+
+    click.echo(f"\nreMark — {period.title()} digest ({digest_data.date_range})")
+    click.echo(f"  Notes synced: {digest_data.notes_count}")
+    click.echo(f"  Open actions: {len(digest_data.action_items)}")
+    click.echo(f"  API cost:     ${digest_data.cost_usd:.2f}")
+    if digest_data.top_tags:
+        click.echo(f"  Top tags:     {', '.join(digest_data.top_tags)}")
+    click.echo()
+
+    if teams and config.microsoft.teams.enabled:
+        posted = await post_digest(config.microsoft.teams, digest_data)
+        if posted:
+            click.echo("Digest posted to Teams.")
+        else:
+            click.echo("Teams post failed (webhook disabled or errored).")
+    elif teams and not config.microsoft.teams.enabled:
+        click.echo("Teams integration is disabled in config.yaml (microsoft.teams.enabled).")
+
+
+@cli.command(name="serve-web")
+@click.option("--host", default=None, help="Override bind host")
+@click.option("--port", default=None, type=int, help="Override bind port")
+@click.pass_context
+def serve_web(ctx: click.Context, host: str | None, port: int | None) -> None:
+    """Start the web dashboard + PWA on the given host/port."""
+    config = ctx.obj["config"]
+    _setup_logging(config)
+
+    bind_host = host or config.web.host
+    bind_port = port or config.web.port
+
+    import uvicorn
+
+    from src.web.app import create_app
+
+    app = create_app(config)
+    click.echo(f"Starting reMark web at http://{bind_host}:{bind_port}/  (Ctrl+C to stop)")
+    uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")
+
+
+@cli.command(name="vapid-keys")
+def vapid_keys() -> None:
+    """Generate a new VAPID keypair for Web Push Notifications."""
+    from src.web.push import generate_vapid_keys
+
+    pub, priv = generate_vapid_keys()
+    click.echo("\nAdd these to config.yaml under `web:`")
+    click.echo(f"  vapid_public_key: {pub}")
+    click.echo(f"  vapid_private_key: {priv}")
+    click.echo("  vapid_subject: \"mailto:you@example.com\"")
+    click.echo("\nKeep the private key secret.\n")
 
 
 @cli.command()

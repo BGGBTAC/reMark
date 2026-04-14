@@ -1,0 +1,18 @@
+name: daily
+description: Daily journal template — priorities, notes, and reflections.
+title_prefix: "Daily"
+fields:
+  - name: date
+    heading: Date
+    type: date
+  - name: priorities
+    heading: Top priorities
+    type: checklist
+    hint: Three most important items
+  - name: notes
+    heading: Notes
+    type: text
+  - name: reflections
+    heading: Reflections
+    type: text
+    hint: What went well, what didn't, what to change.
