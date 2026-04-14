@@ -6,9 +6,11 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Bidirectional sync between reMarkable tablets and an Obsidian knowledge base** with multi-engine OCR, intelligent note processing, and automatic action item extraction.
+**Bidirectional sync between reMarkable tablets and an Obsidian knowledge base** with multi-engine OCR, intelligent note processing, semantic search, and automatic action item extraction.
 
-Write on your reMarkable. reMark handles the rest — your handwritten notes become structured, searchable Markdown in Obsidian, complete with tags, summaries, and extracted action items. Optionally push a response PDF back to your tablet.
+Write on your reMarkable. reMark handles the rest — your handwritten notes become structured, searchable Markdown in Obsidian (optionally mirrored to OneNote), complete with tags, summaries, and action items. Push responses back to the tablet, query your vault in natural language, drive Microsoft To Do / Calendar / Teams, and run the whole thing with a web dashboard + mobile PWA.
+
+> **Latest:** v0.3.0 — Web Dashboard + PWA, OneNote & Teams integration, Obsidian → reMarkable reverse sync, on-device templates, and a plugin system. See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ---
 
@@ -53,36 +55,49 @@ Write on your reMarkable. reMark handles the rest — your handwritten notes bec
 ## Architecture
 
 ```
-┌─────────────────┐     reMarkable Cloud API      ┌──────────────────────┐
-│  reMarkable      │◄──────────────────────────────►│  reMark              │
-│  Paper Pro / rM2 │     (sync 1.5 / JWT auth)     │  (VPS - systemd)     │
-└─────────────────┘                                 │                      │
-                                                    │  ┌────────────────┐  │
-                                                    │  │ sync_engine    │  │
-                                                    │  │ ocr_pipeline   │  │
-                                                    │  │ note_processor │  │
-                                                    │  │ obsidian_write │  │
-                                                    │  │ response_push  │  │
-                                                    │  └────────────────┘  │
-                                                    │         │            │
-                                                    │         ▼            │
-                                                    │  ┌────────────────┐  │
-                                                    │  │ Obsidian Vault │  │
-                                                    │  │ (Git-synced)   │  │
-                                                    │  └────────────────┘  │
-                                                    └──────────────────────┘
+┌──────────────────┐    reMarkable Cloud API    ┌──────────────────────────┐
+│  reMarkable       │◄─────────────────────────►│  reMark                  │
+│  Paper Pro / rM2  │    (sync 1.5 / JWT)        │                          │
+└──────────────────┘                              │  ┌────────────────────┐ │
+        ▲                                         │  │ sync_engine        │ │
+        │                                         │  │  ├─ ocr_pipeline   │ │
+   (PDF│/notebook                                 │  │  ├─ processing     │ │
+    push│back)                                    │  │  ├─ vault_writer   │ │
+        │                                         │  │  ├─ search_indexer │ │
+        │                                         │  │  ├─ response_push  │ │
+        │                                         │  │  ├─ reverse_sync   │ │
+        │                                         │  │  ├─ plugins        │ │
+        │                                         │  │  └─ integrations   │ │
+        │                                         │  └────────────────────┘ │
+        │                                         │          │              │
+        └───────response / reverse-push───────────┤          ▼              │
+                                                  │  ┌────────────────────┐ │
+                                                  │  │ Obsidian Vault     │ │
+                                                  │  │  (Git-synced)      │ │
+                                                  │  │ + OneNote (opt.)   │ │
+                                                  │  └────────────────────┘ │
+                                                  │          │              │
+                                                  │          ▼              │
+                                                  │  MCP · Web UI · PWA     │
+                                                  │  Outlook · Teams        │
+                                                  └──────────────────────────┘
 ```
 
 ### Data Flow
 
 ```
-1. DETECT    → New/changed notebook on reMarkable Cloud
+1. DETECT    → New/changed notebook on reMarkable Cloud (poll or WebSocket)
 2. DOWNLOAD  → Fetch .rm files + metadata via sync 1.5 protocol
-3. CONVERT   → Extract text (built-in conversion → fallback OCR)
-4. PROCESS   → Extract structure, action items, tags
-5. STORE     → Write Markdown + frontmatter to Obsidian vault
-6. RESPOND   → Generate summary PDF, push back to reMarkable
-7. TRACK     → Update sync state DB, commit vault to Git
+3. CONVERT   → Extract text (CRDT → MyScript → primary OCR → fallback)
+4. PROCESS   → Structure, actions, tags, summary, optional Q&A
+5. STORE     → Write Markdown + YAML frontmatter to Obsidian vault
+               (optional parallel write to OneNote)
+6. INDEX     → Chunk and embed for semantic search (if enabled)
+7. RESPOND   → Auto-generate response PDF / notebook; push back to tablet
+8. INTEGRATE → Push action items to Microsoft To Do, deadlines to Calendar,
+               post digest to Teams (if enabled)
+9. REVERSE   → Pick up flagged vault notes and push them to the tablet
+10. TRACK    → Update SQLite state DB, log API usage, commit vault to Git
 ```
 
 ## Requirements
@@ -226,9 +241,41 @@ Routes include `/notes`, `/actions`, `/ask`, `/quick-entry`, and `/settings`. Wh
 
 ### Plugin System
 
-Drop a `.py` file into `~/.config/remark/plugins/` that subclasses one of `ActionExtractorHook`, `OCRBackendHook`, `NoteProcessorHook`, or `SyncHook`. Plugins are also auto-discovered via the `remark_bridge.plugins` entry point group.
+reMark can be extended with user-written plugins. See **[docs/plugins.md](docs/plugins.md)** for the full developer guide.
 
-See [src/plugins/examples/at_mention_extractor.py](src/plugins/examples/at_mention_extractor.py) for a reference.
+**Quick overview:**
+
+1. Create a `.py` file in `~/.config/remark/plugins/` (configurable via `plugins.plugin_dir`), or distribute a package exposing a `remark_bridge.plugins` entry point.
+2. Subclass one or more of the four hook types in [src/plugins/hooks.py](src/plugins/hooks.py):
+   - `ActionExtractorHook` — emit extra action items from note text.
+   - `OCRBackendHook` — provide an additional OCR engine.
+   - `NoteProcessorHook` — post-process the structured note before it's written to the vault.
+   - `SyncHook` — observe sync lifecycle events (`before_sync`, `after_sync`, `after_document`).
+3. Each plugin must expose a `metadata` property returning a `PluginMetadata` dataclass with at least a unique `name`.
+4. Optional: implement `configure(settings)` — receives `config.plugins.settings[<plugin-name>]` from `config.yaml`.
+
+Manage plugins from the CLI:
+
+```bash
+remark-bridge plugins list              # discover + list with hooks
+remark-bridge plugins info <name>       # show detailed metadata
+remark-bridge plugins enable <name>
+remark-bridge plugins disable <name>
+```
+
+Permanent disable list and per-plugin settings in `config.yaml`:
+
+```yaml
+plugins:
+  enabled: true
+  plugin_dir: "~/.config/remark/plugins"
+  disabled: ["plugin-name-to-skip"]
+  settings:
+    at-mention-extractor:
+      default_priority: high
+```
+
+Reference plugin: [src/plugins/examples/at_mention_extractor.py](src/plugins/examples/at_mention_extractor.py) — turns `@-mentions` into follow-up action items in ~30 lines.
 
 ### Semantic Search
 
@@ -293,47 +340,91 @@ sudo systemctl enable --now remarkable-bridge.timer
 ```
 reMark/
 ├── src/
-│   ├── main.py              # CLI entry point (Click)
-│   ├── config.py            # Config loading + validation
-│   ├── remarkable/          # reMarkable Cloud interaction
-│   │   ├── auth.py          # JWT auth flow
-│   │   ├── cloud.py         # Cloud API client (sync 1.5)
-│   │   ├── documents.py     # Document listing, download, upload
-│   │   ├── websocket.py     # Real-time change notifications
-│   │   └── formats.py       # .rm file parsing (wraps rmscene)
-│   ├── ocr/                 # Handwriting recognition pipeline
-│   │   ├── pipeline.py      # OCR orchestrator (strategy pattern)
-│   │   ├── remarkable_builtin.py
-│   │   ├── google_vision.py
-│   │   ├── vlm.py
-│   │   └── renderer.py      # .rm → PNG/SVG rendering
-│   ├── processing/          # Intelligent note processing
-│   │   ├── structurer.py    # Raw text → structured Markdown
-│   │   ├── actions.py       # Action item extraction
-│   │   ├── tagger.py        # Auto-tagging
-│   │   └── summarizer.py    # Note summarization
-│   ├── obsidian/            # Obsidian vault management
-│   │   ├── vault.py         # Read/write operations
-│   │   ├── frontmatter.py   # YAML frontmatter generation
-│   │   ├── templates.py     # Note templates
-│   │   └── git_sync.py      # Git commit + push
-│   ├── response/            # Push results back to reMarkable
-│   │   ├── pdf_generator.py # Generate response PDFs
-│   │   ├── notebook_writer.py
-│   │   └── uploader.py
-│   ├── sync/                # Sync orchestration
-│   │   ├── engine.py        # Main sync loop
-│   │   ├── state.py         # SQLite state tracking
-│   │   ├── scheduler.py     # Cron / interval scheduling
-│   │   └── watcher.py       # WebSocket real-time watcher
-│   └── mcp/                 # MCP server
-│       └── server.py
-├── tests/
-├── scripts/
-├── systemd/
-├── vault_template/          # Initial Obsidian vault structure
-├── config.example.yaml
+│   ├── main.py                     # CLI entry point (Click)
+│   ├── config.py                   # Config loading + Pydantic validation
+│   │
+│   ├── remarkable/                 # reMarkable Cloud interaction
+│   │   ├── auth.py                 # JWT auth flow
+│   │   ├── cloud.py                # Cloud API client (sync 1.5)
+│   │   ├── documents.py            # Document listing, download, upload
+│   │   ├── websocket.py            # Real-time change notifications
+│   │   └── formats.py              # .rm file parsing (wraps rmscene)
+│   │
+│   ├── ocr/                        # Handwriting recognition pipeline
+│   │   ├── pipeline.py             # OCR orchestrator (strategy pattern)
+│   │   ├── remarkable_builtin.py   # MyScript conversion reader
+│   │   ├── google_vision.py        # Google Cloud Vision backend
+│   │   ├── vlm.py                  # Claude / GPT-4o vision backend
+│   │   └── renderer.py             # .rm → PNG/SVG rendering
+│   │
+│   ├── processing/                 # Intelligent note processing
+│   │   ├── structurer.py           # Raw text → structured Markdown
+│   │   ├── actions.py              # Action item extraction
+│   │   ├── tagger.py               # Auto-tagging
+│   │   ├── summarizer.py           # Note summarization
+│   │   └── usage.py                # Token accounting + cost tracking
+│   │
+│   ├── obsidian/                   # Obsidian vault management
+│   │   ├── vault.py                # Read/write, archive, action items
+│   │   ├── frontmatter.py          # YAML frontmatter generation
+│   │   ├── templates.py            # Note content templates
+│   │   └── git_sync.py             # Git commit + push
+│   │
+│   ├── response/                   # Push-back to reMarkable
+│   │   ├── pdf_generator.py        # E-ink optimized PDF
+│   │   ├── notebook_writer.py      # Native .rm notebook
+│   │   ├── generator.py            # Response orchestrator (Q&A + analysis)
+│   │   └── uploader.py             # Upload to Cloud (PDF + notebook zip)
+│   │
+│   ├── sync/                       # Sync orchestration
+│   │   ├── engine.py               # Main sync loop
+│   │   ├── state.py                # SQLite state tracking (WAL)
+│   │   ├── scheduler.py            # Cron / interval scheduling
+│   │   ├── watcher.py              # WebSocket real-time watcher
+│   │   └── reverse_sync.py         # Obsidian → reMarkable (v0.3)
+│   │
+│   ├── search/                     # Semantic search / RAG (v0.2)
+│   │   ├── backends.py             # Voyage / OpenAI / local embeddings
+│   │   ├── chunker.py              # Markdown-aware chunking
+│   │   ├── index.py                # sqlite-vec VectorIndex
+│   │   ├── indexer.py              # Chunking + embedding orchestrator
+│   │   └── query.py                # Semantic query + Claude synthesis
+│   │
+│   ├── integrations/               # External integrations
+│   │   └── microsoft/              # Microsoft Graph
+│   │       ├── auth.py             # MSAL device-code flow
+│   │       ├── graph.py            # Async Graph client
+│   │       ├── todo.py             # Microsoft To Do (tasks)
+│   │       ├── calendar.py         # Outlook Calendar (events)
+│   │       ├── onenote.py          # OneNote mirror (v0.3)
+│   │       ├── teams.py            # Teams digest + meeting corr. (v0.3)
+│   │       └── service.py          # High-level facade
+│   │
+│   ├── plugins/                    # Plugin system (v0.3)
+│   │   ├── hooks.py                # ActionExtractor / OCR / Processor / Sync
+│   │   ├── registry.py             # Discovery + enable/disable
+│   │   └── examples/               # Reference plugins
+│   │
+│   ├── web/                        # Web dashboard + PWA (v0.3)
+│   │   ├── app.py                  # FastAPI app, routes
+│   │   ├── push.py                 # VAPID Web Push helper
+│   │   ├── templates/              # Jinja2 HTML templates
+│   │   └── static/                 # Service worker, manifest, JS, icons
+│   │
+│   ├── templates/                  # On-device template engine (v0.3)
+│   │   ├── engine.py               # Render PDF + extract fields
+│   │   └── builtin/                # meeting / daily / project-review
+│   │
+│   └── mcp/                        # MCP server
+│       └── server.py               # Tools for Claude Desktop / Code
+│
+├── tests/                          # 408 tests across all modules
+├── scripts/                        # Setup + connection test helpers
+├── systemd/                        # VPS service + timer units
+├── vault_template/                 # Initial Obsidian vault structure
+├── config.example.yaml             # Full reference config
 ├── pyproject.toml
+├── CHANGELOG.md
 └── LICENSE
 ```
 
