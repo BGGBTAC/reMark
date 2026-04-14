@@ -1,6 +1,6 @@
 [project]
 name = "remark-bridge"
-version = "0.2.0"
+version = "0.3.0"
 description = "Bidirectional sync between reMarkable tablets and an Obsidian knowledge base with intelligent note processing"
 readme = "README.md"
 license = { text = "MIT" }
@@ -34,6 +34,10 @@ dependencies = [
     "sqlite-vec>=0.1.0",
     "numpy>=1.24",
     "msal>=1.27.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "jinja2>=3.1",
+    "pywebpush>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -79,3 +83,4 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E501"]
+"src/web/app.py" = ["B008"]  # FastAPI uses Depends() in defaults by design

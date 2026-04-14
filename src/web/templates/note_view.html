@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ frontmatter.title or path }} — {{ app_name }}{% endblock %}
+
+{% block content %}
+<a href="/notes" class="text-sm text-blue-600 hover:underline">← back to notes</a>
+
+<article class="mt-4 bg-white rounded-lg shadow-sm p-6">
+  <h1 class="text-2xl font-semibold mb-2">{{ frontmatter.title or path }}</h1>
+  <div class="text-xs text-gray-500 font-mono mb-4">{{ path }}</div>
+
+  {% if frontmatter %}
+  <div x-data="{ open: false }" class="mb-6">
+    <button @click="open = !open" class="text-sm text-blue-600 hover:underline">
+      <span x-text="open ? 'Hide metadata' : 'Show metadata'"></span>
+    </button>
+    <pre x-show="open" x-cloak
+         class="mt-2 bg-gray-50 text-xs p-3 rounded overflow-x-auto">{{ frontmatter | tojson(indent=2) }}</pre>
+  </div>
+  {% endif %}
+
+  <div class="prose prose-sm max-w-none whitespace-pre-wrap">{{ content }}</div>
+</article>
+{% endblock %}

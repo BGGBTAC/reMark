@@ -14,21 +14,41 @@ Write on your reMarkable. reMark handles the rest — your handwritten notes bec
 
 ## Features
 
+### Core sync & processing
 - **Multi-engine OCR pipeline** — reMarkable built-in (MyScript), Google Cloud Vision, or VLM-based recognition with automatic fallback
 - **Intelligent structuring** — raw handwriting becomes clean Markdown with inferred headings, lists, and formatting
-- **Action item extraction** — detects tasks, questions, and follow-ups from both text patterns and pen color annotations
-- **Auto-tagging** — categorizes notes based on content
-- **Obsidian vault integration** — writes notes with full YAML frontmatter, wiki-links, and Git sync
-- **Response push** — auto-generates PDFs or native reMarkable notebooks that answer questions found in your notes, pushes them back to the tablet
-- **Semantic search (RAG)** — embed the entire vault and query it with natural language (`remark-bridge ask`) — backends for Voyage, OpenAI, or local sentence-transformers
-- **Microsoft Outlook integration** — action items flow into Microsoft To Do, deadlines become Outlook Calendar events
-- **Deletion-aware** — notes deleted on the tablet are archived in the vault automatically
-- **Cost tracking** — built-in token and cost accounting for every API call
-- **Real-time sync** — WebSocket-based live notifications or configurable cron schedule
-- **Color-aware** — uses reMarkable Paper Pro's color ink for semantic marking (red = action, blue = question, yellow = highlight)
+- **Action item extraction** — tasks, questions, follow-ups from both text patterns and pen color annotations
+- **Auto-tagging** and **summarization** — categorizes and condenses notes
+- **Real-time sync** — WebSocket notifications or configurable cron schedule
+
+### Knowledge management
+- **Obsidian vault integration** — YAML frontmatter, wiki-links, Git sync
+- **Semantic search (RAG)** — embed the entire vault and query it with natural language. Backends for Voyage, OpenAI, or local sentence-transformers
+- **OneNote mirror** _(v0.3)_ — write notes in parallel to Microsoft OneNote
+- **Deletion-aware** — notes removed from the tablet are archived in the vault automatically
+
+### Response + reverse push
+- **Response push** — auto-generates PDFs or native reMarkable notebooks that answer questions in your notes
+- **Reverse sync** _(v0.3)_ — push Obsidian notes back to the tablet (frontmatter flag, folder-based, or on-demand)
+- **On-device templates** _(v0.3)_ — push structured templates (meeting, daily, project review) to the tablet and extract the filled fields back into frontmatter
+
+### Integrations
+- **Microsoft Outlook** — action items → Microsoft To Do, deadlines → Outlook Calendar
+- **Microsoft Teams** _(v0.3)_ — daily/weekly digest Adaptive Cards, meeting ↔ note correlation
 - **MCP server** — interact with your notes directly from Claude Desktop or Claude Code
+
+### Web + PWA
+- **Web dashboard** _(v0.3)_ — FastAPI + HTMX + Alpine.js + Tailwind, no build step
+- **Mobile PWA** _(v0.3)_ — installable app with Web Push notifications and quick-entry from your phone
+- **Start on demand** via `remark-bridge serve-web`
+
+### Extensibility
+- **Plugin system** _(v0.3)_ — custom action extractors, OCR backends, note post-processors, sync hooks. Load from a local directory or pip-installed packages.
+
+### Operations
+- **Cost tracking** — token usage and USD cost logged per API call
 - **Health check** — `remark-bridge doctor` verifies config, auth, vault, API keys, and system deps
-- **Idempotent** — SQLite state tracking ensures notes are never processed twice
+- **Idempotent** — SQLite state tracking with WAL mode; notes are never processed twice
 
 ## Architecture
 
@@ -127,7 +147,11 @@ Key sections:
 | `sync` | Trigger mode (realtime/scheduled/manual), WebSocket config |
 | `response` | Response format (PDF/notebook), auto-trigger rules |
 | `search` | Semantic search — backend, chunking, synthesis |
-| `microsoft` | Outlook Tasks + Calendar integration |
+| `microsoft` | Outlook Tasks + Calendar + OneNote + Teams integration |
+| `reverse_sync` | Obsidian → reMarkable push-back triggers |
+| `plugins` | Plugin discovery + settings |
+| `web` | Dashboard host/port, auth, VAPID keys |
+| `templates` | On-device template engine |
 
 See [config.example.yaml](config.example.yaml) for the full reference with comments.
 
@@ -170,9 +194,41 @@ remark-bridge status
 # Start MCP server (for Claude Desktop / Claude Code)
 remark-bridge serve
 
+# Start the web dashboard + PWA (v0.3)
+remark-bridge serve-web
+
+# Push a vault note back to your tablet (v0.3)
+remark-bridge push-note "My Vault Note"
+
+# Post a Teams digest (v0.3)
+remark-bridge digest --period weekly --teams
+
+# Push an on-device template (v0.3)
+remark-bridge template push meeting
+
+# Plugin management (v0.3)
+remark-bridge plugins list
+
+# Generate VAPID keys for Web Push (v0.3)
+remark-bridge vapid-keys
+
 # One-time import of all existing notebooks
 remark-bridge migrate
 ```
+
+### Web Dashboard + PWA
+
+```bash
+remark-bridge serve-web  # http://localhost:8080
+```
+
+Routes include `/notes`, `/actions`, `/ask`, `/quick-entry`, and `/settings`. When you generate VAPID keys and install the app to your phone's homescreen, Web Push notifications fire for high-priority action items.
+
+### Plugin System
+
+Drop a `.py` file into `~/.config/remark/plugins/` that subclasses one of `ActionExtractorHook`, `OCRBackendHook`, `NoteProcessorHook`, or `SyncHook`. Plugins are also auto-discovered via the `remark_bridge.plugins` entry point group.
+
+See [src/plugins/examples/at_mention_extractor.py](src/plugins/examples/at_mention_extractor.py) for a reference.
 
 ### Semantic Search
 

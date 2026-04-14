@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Notes — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-semibold">Notes</h1>
+  <form method="get" class="flex gap-2">
+    <input type="text" name="q" value="{{ filter_query or '' }}"
+           placeholder="Search..."
+           class="rounded border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <input type="text" name="folder" value="{{ filter_folder or '' }}"
+           placeholder="Folder..."
+           class="rounded border-gray-300 text-sm px-3 py-1.5">
+    <button type="submit" class="bg-blue-600 text-white text-sm px-4 py-1.5 rounded">Filter</button>
+  </form>
+</div>
+
+{% if notes %}
+<div class="bg-white rounded-lg shadow-sm divide-y">
+  {% for n in notes %}
+  <a href="/notes/{{ n.path }}" class="block p-4 hover:bg-gray-50">
+    <div class="flex justify-between items-start">
+      <div class="min-w-0">
+        <div class="font-medium truncate">{{ n.title }}</div>
+        {% if n.summary %}<div class="text-sm text-gray-500 mt-1">{{ n.summary }}</div>{% endif %}
+        <div class="text-xs text-gray-400 mt-1 font-mono">{{ n.path }}</div>
+      </div>
+      <div class="flex gap-2 ml-4 flex-shrink-0">
+        {% if n.action_items %}
+        <span class="inline-flex items-center bg-orange-100 text-orange-800 text-xs px-2 py-0.5 rounded">
+          {{ n.action_items }} actions
+        </span>
+        {% endif %}
+        {% for tag in n.tags[:3] %}
+        <span class="inline-flex items-center bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded">
+          {{ tag }}
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+<div class="mt-4 text-sm text-gray-500">{{ notes | length }} notes</div>
+{% else %}
+<div class="bg-white rounded-lg shadow-sm p-8 text-center text-gray-500">
+  No notes match your filters.
+</div>
+{% endif %}
+{% endblock %}
