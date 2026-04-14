@@ -3,6 +3,7 @@
 [![CI](https://github.com/BGGBTAC/reMark/actions/workflows/ci.yml/badge.svg)](https://github.com/BGGBTAC/reMark/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/remark-bridge)](https://pypi.org/project/remark-bridge/)
 [![Downloads](https://img.shields.io/pypi/dm/remark-bridge)](https://pypi.org/project/remark-bridge/)
+[![Docker image](https://img.shields.io/badge/ghcr-remark--bridge-2496ED?logo=docker&logoColor=white)](https://github.com/BGGBTAC/reMark/pkgs/container/remark-bridge)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 [![Non-Commercial](https://img.shields.io/badge/use-non--commercial-red.svg)](LICENSE)
@@ -136,30 +137,34 @@ pip install .
 
 ### With Docker
 
-The repository ships a multi-stage `Dockerfile` and a `docker-compose.yml`
-that runs the dashboard + sync daemon together, sharing a common state
-volume and vault.
+Every release auto-publishes a multi-arch container to GitHub Container
+Registry. The shipped `docker-compose.yml` defaults to pulling that
+image so you don't need a local checkout to run it.
 
 ```bash
-git clone https://github.com/BGGBTAC/reMark.git
-cd reMark
+# 1. Grab the compose file and env template
+curl -O https://raw.githubusercontent.com/BGGBTAC/reMark/main/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/BGGBTAC/reMark/main/.env.example
 
-# 1. Create your config directory (mounted read/write into the container)
+# 2. Fill in .env — at minimum ANTHROPIC_API_KEY. Optionally pin
+#    REMARK_IMAGE_TAG=0.4.0 to freeze on a specific release.
+
+# 3. Prepare a config directory on the host
 mkdir -p config
-cp config.example.yaml config/config.yaml
-# edit config/config.yaml — at minimum set your vault path to /vault
+curl -o config/config.yaml https://raw.githubusercontent.com/BGGBTAC/reMark/main/config.example.yaml
+# edit config/config.yaml — at minimum set vault_path to /vault
 
-# 2. Copy and fill in environment variables
-cp .env.example .env
-# edit .env — set ANTHROPIC_API_KEY and any other credentials you use
-
-# 3. Build and start both services
-docker compose up -d --build
+# 4. Pull and start both services
+docker compose up -d
 ```
 
-The dashboard is then reachable on <http://localhost:8000> (set
-`REMARK_WEB_PORT` in `.env` to change the host port). First-time
-reMarkable Cloud auth runs inside the sync container — tail it with:
+Prefer building from a checkout? The same compose file has a `build:`
+block as fallback — just run `docker compose build && docker compose up -d`
+from inside the repository.
+
+The dashboard is reachable on <http://localhost:8000> (set `REMARK_WEB_PORT`
+in `.env` to change the host port). First-time reMarkable Cloud auth
+runs inside the sync container:
 
 ```bash
 docker compose exec sync remark-bridge auth
@@ -167,8 +172,16 @@ docker compose logs -f sync
 ```
 
 Named volumes `vault` and `state` persist your Obsidian vault and the
-SQLite state DB across container recreates. Healthchecks hit
-`/healthz`, so `docker compose ps` will flag a degraded deployment.
+SQLite state DB across container recreates. Healthchecks hit `/healthz`,
+so `docker compose ps` flags a degraded deployment.
+
+**Available tags** on `ghcr.io/bggbtac/remark-bridge`:
+
+| Tag       | Points at                     |
+|-----------|-------------------------------|
+| `latest`  | Most recent stable release    |
+| `0.4`     | Latest 0.4.x                  |
+| `0.4.0`   | Exact release (immutable)     |
 
 ## Setup
 

@@ -10,7 +10,12 @@
 
 services:
   web:
-    image: remark-bridge:local
+    # Default: pull the published image from GHCR. Override the tag via
+    # REMARK_IMAGE_TAG in .env (e.g. REMARK_IMAGE_TAG=0.4.0) to pin a
+    # specific release. The `build` block is kept as a fallback so
+    # developers can still build from a local checkout with
+    # `docker compose build`.
+    image: "ghcr.io/bggbtac/remark-bridge:${REMARK_IMAGE_TAG:-latest}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -36,7 +41,7 @@ services:
       start_period: 20s
 
   sync:
-    image: remark-bridge:local
+    image: "ghcr.io/bggbtac/remark-bridge:${REMARK_IMAGE_TAG:-latest}"
     build:
       context: .
       dockerfile: Dockerfile
