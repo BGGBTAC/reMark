@@ -15,6 +15,7 @@ Secrets:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import re
@@ -68,12 +69,10 @@ def write_yaml(path: str | Path, data: Any) -> None:
             _yaml().dump(data, fh)
         os.replace(tmp_name, path)
     except Exception:
-        # Best-effort cleanup — ignore secondary errors so the caller
+        # Best-effort cleanup — swallow secondary errors so the caller
         # still sees the real failure.
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_name)
-        except OSError:
-            pass
         raise
 
 

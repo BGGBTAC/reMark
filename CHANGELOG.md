@@ -4,6 +4,64 @@ All notable changes to **reMark** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) and its commits group into the
 phases described in the release notes.
 
+## [0.5.0] — 2026-04-14
+
+"Integrations & Smart". Web-first configuration plus four new features:
+offline queue, hierarchical tags, math/LaTeX plugin, Notion mirror.
+
+### Added
+- **Editable /settings** for every config section. Forms render from
+  ``AppConfig`` model fields so new keys surface automatically; writes
+  round-trip through ruamel.yaml so inline comments survive. Secrets
+  (tokens, passwords, client secrets) are masked with a sentinel so
+  they're never sent back to the browser; submitting the sentinel
+  leaves the existing value untouched. Sections that need a process
+  restart (``sync``, ``web``, ``logging``, ``remarkable``) show a
+  banner. Every change logs an audit entry in ``sync_log``.
+- **Offline / retry queue** (``sync_queue`` table). Transient failures
+  during ``process_document`` now enqueue a retry with exponential
+  back-off (1m → 5m → 25m, cap 6h). Each sync cycle drains due
+  entries before processing fresh work. New CLI group
+  ``remark-bridge queue list | retry | clear``, ``/queue`` page in
+  the web UI with per-row retry, and a dashboard banner when
+  pending/failed > 0.
+- **Hierarchical tagger**. New ``processing.hierarchical_tags`` flag
+  swaps the tagger prompt to emit slash-separated tags like
+  ``project/remark-bridge/multi-device``. Default off so existing
+  vaults aren't auto-migrated. Companion CLI
+  ``remark-bridge retag [--dry-run] [--limit N]`` backfills vault
+  notes after enabling the flag.
+- **Example math / LaTeX plugin** (``examples/plugins/math_latex_plugin.py``).
+  NoteProcessor wraps bare LaTeX fragments (``\frac``, ``\sum``, greek
+  letters, ``\begin{equation}`` blocks) in ``$...$`` / ``$$...$$`` so
+  Obsidian renders them. Optional OCR backend stub for pix2text
+  (default) or MathPix behind a ``backend`` setting.
+- **Notion integration** (``src/integrations/notion/``). Mirror synced
+  notes into a Notion workspace via an internal integration token.
+  Each note becomes a child page under the configured
+  ``vault_mirror_page_id`` with Notion blocks mapped from the source
+  Markdown (headings, paragraphs, bulleted / numbered lists, to-do
+  items). One-way today; task pull stubbed for a future release.
+
+### Changed
+- New dependency: ``ruamel.yaml >= 0.18`` for comment-preserving
+  config writes.
+- Settings UI indexed alongside existing pages in the top nav; old
+  read-only JSON dump replaced with a tile grid linking to each
+  section form.
+
+### Tests
+- ``tests/test_settings_write.py`` — comment round-trip, secret MASK
+  sentinel, bool checkbox parsing, nested subgroup rendering,
+  end-to-end POST writes YAML.
+- ``tests/test_sync_queue.py`` — enqueue/dequeue, priority ordering,
+  back-off skipping, attempt cap, retry reset, clear-by-status.
+- ``tests/test_processing.py`` — hierarchical vs flat prompt swap.
+- ``tests/test_math_latex_plugin.py`` — inline wrap, existing-math
+  skip, code-fence skip, block env ``$$...$$``, disabled no-op.
+- ``tests/test_notion.py`` — markdown-to-blocks edge cases, service
+  enabled logic, error suppression.
+
 ## [0.4.0] — 2026-04-14
 
 "Distribution & Multi-Device". Three significant additions, no breaking
