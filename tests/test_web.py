@@ -155,7 +155,11 @@ class TestRoutes:
     def test_health(self, client):
         resp = client.get("/healthz")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body["checks"]["state_db"] == "ok"
+        assert body["checks"]["vault"] == "ok"
+        assert "version" in body
 
 
 # =====================
