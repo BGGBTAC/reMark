@@ -80,6 +80,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config is None:
         config = _resolve_config()
 
+    # REMARK_DEMO_MODE=1 populates a scratch state DB + vault with
+    # deterministic demo data so the docs screenshot workflow can
+    # render the UI without talking to reMarkable Cloud. Seeding is
+    # idempotent — first hit writes the fixtures, subsequent startups
+    # are no-ops.
+    from src.web import demo
+
+    if demo.is_enabled():
+        try:
+            demo.seed(config)
+        except Exception as exc:  # noqa: BLE001 — demo must never crash the app
+            logger.warning("demo seed failed: %s", exc)
+
     app = FastAPI(title=config.web.app_name, openapi_url=None)
 
     # Mount static files for CSS / JS / manifest / service worker

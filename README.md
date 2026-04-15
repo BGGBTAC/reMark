@@ -12,7 +12,7 @@
 
 Write on your reMarkable. reMark handles the rest — your handwritten notes become structured, searchable Markdown in Obsidian (optionally mirrored to OneNote), complete with tags, summaries, and action items. Push responses back to the tablet, query your vault in natural language, drive Microsoft To Do / Calendar / Teams, and run the whole thing with a web dashboard + mobile PWA.
 
-> **Latest:** v0.6.5 — Service release: full security + correctness + performance audit with targeted fixes (path-traversal in `/notes`, constant-time bridge-token verification, dashboard/notes served from the state DB, async web push, atomic device-token writes) plus a documentation sweep with three new reference pages under [`docs/`](docs/). See [CHANGELOG.md](CHANGELOG.md) for the full history.
+> **Latest:** v0.6.6 — Mini release: wiki screenshots are now regenerated on every `v*` tag via a Playwright workflow driving a demo-seeded web server (`REMARK_DEMO_MODE=1`). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ---
 

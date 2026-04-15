@@ -4,6 +4,39 @@ All notable changes to **reMark** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) and its commits group into the
 phases described in the release notes.
 
+## [0.6.6] — 2026-04-15
+
+Mini release. Ships the automation behind the wiki screenshots.
+
+### Added
+- **`REMARK_DEMO_MODE`** — when the env var is set, `create_app`
+  seeds a deterministic state DB + vault (15 notes, 3 devices, a
+  failing queue entry, one bridge token) so the UI can render
+  without a real reMarkable Cloud pairing. Source lives in
+  `src/web/demo.py`. Seeding is idempotent and logs a warning
+  rather than crashing if it fails.
+- **`scripts/seed_demo_data.py`** — CLI wrapper around the seeder;
+  writes a throwaway `config.yaml` + vault + state dir so a
+  CI run can point `REMARK_CONFIG` at it.
+- **`scripts/screenshots.py`** — Playwright headless-Chromium driver
+  that captures 15 screenshots of the dashboard, notes list, queue,
+  templates editor, `/settings/<section>` forms, and friends, at
+  1440×900 with retina scaling.
+- **`.github/workflows/screenshots.yml`** — `workflow_dispatch` + on
+  every `v*` tag. Seeds, starts the web server, runs Playwright,
+  uploads the PNGs as an artifact, and pushes them into
+  `BGGBTAC/reMark.wiki` under `images/` using the
+  `WIKI_PUSH_TOKEN` secret.
+- **Wiki embeds** — the Home, Web-Dashboard, Multi-Device, Templates,
+  and Search pages reference the generated images. Missing images
+  degrade gracefully (GitHub renders the alt text).
+
+### Notes
+- The `WIKI_PUSH_TOKEN` secret must be a fine-grained PAT scoped to
+  the wiki repo with Contents write access. The workflow exits
+  cleanly with a log message if the secret is missing — never fails
+  the tag push.
+
 ## [0.6.5] — 2026-04-15
 
 Service release. No new features — a full security, correctness,
