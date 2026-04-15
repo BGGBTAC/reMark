@@ -197,6 +197,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 logger.warning("admin bootstrap failed: %s", exc)
         return cached
 
+    def _scope_user_id(request: Request) -> int | None:
+        """Return the user_id the current viewer should see rows for.
+
+        ``None`` means "no filter" — admins see everything across the
+        install, consistent with how the CLI works today. Regular
+        users only ever see rows tagged with their own id.
+        """
+        user = web_auth.current_user(request)
+        if user is None:
+            return None
+        if user.get("role") == "admin":
+            return None
+        return int(user["id"])
+
     # -- Routes --
 
     @app.get("/login", response_class=HTMLResponse)
@@ -323,7 +337,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             usage = state.get_api_usage_summary(days=30)
             recent_log = state.get_recent_log(limit=10)
             queue_summary = state.queue_summary()
-            recent_rows = state.recent_synced(limit=10)
+            recent_rows = state.recent_synced(
+                limit=10, user_id=_scope_user_id(request),
+            )
         finally:
             state.close()
 
@@ -367,7 +383,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         vault = get_vault()
         state = get_state()
         try:
-            rows = state.list_synced(folder=folder, query=q, limit=300)
+            rows = state.list_synced(
+                folder=folder, query=q, limit=300,
+                user_id=_scope_user_id(request),
+            )
         finally:
             state.close()
 
@@ -818,7 +837,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def devices_view(request: Request, _=Depends(_auth_check)):
         state = get_state()
         try:
-            rows = state.list_devices(active_only=False)
+            rows = state.list_devices(
+                active_only=False, user_id=_scope_user_id(request),
+            )
         finally:
             state.close()
         return templates.TemplateResponse(

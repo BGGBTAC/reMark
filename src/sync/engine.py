@@ -83,20 +83,30 @@ class SyncEngine:
         self._anthropic: anthropic.AsyncAnthropic | None = None
         self._indexer = None  # Lazy — only built if search is enabled
         self._plugins = None  # Lazy plugin registry
-        # Multi-device context: the active device id for the current cycle.
-        # Set via set_device(); used when writing sync_state rows.
+        # Multi-device + multi-user context: the active (user, device)
+        # for the current cycle. Set via set_device(); used when
+        # writing sync_state rows.
         self._current_device_id: str = "default"
         self._current_vault_subfolder: str = ""
+        self._current_user_id: int = 1  # pre-0.7 single-user default
 
-    def set_device(self, device_id: str, vault_subfolder: str = "") -> None:
+    def set_device(
+        self,
+        device_id: str,
+        vault_subfolder: str = "",
+        user_id: int = 1,
+    ) -> None:
         """Switch the engine's active device context.
 
         Multi-device installs call this before each sync_once() run so the
         state DB records which tablet the documents came from and writes
-        land in the correct vault subfolder.
+        land in the correct vault subfolder. ``user_id`` scopes rows for
+        multi-user installs — defaults to 1 (the admin) for pre-0.7
+        behaviour.
         """
         self._current_device_id = device_id
         self._current_vault_subfolder = vault_subfolder
+        self._current_user_id = user_id
 
     @property
     def state(self) -> SyncState:
@@ -576,6 +586,7 @@ class SyncEngine:
                 page_count=len(pages),
                 action_count=len(actions),
                 device_id=self._current_device_id,
+                user_id=self._current_user_id,
             )
 
             # Evaluate auto-response trigger
