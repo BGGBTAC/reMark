@@ -180,8 +180,8 @@ so `docker compose ps` flags a degraded deployment.
 | Tag       | Points at                     |
 |-----------|-------------------------------|
 | `latest`  | Most recent stable release    |
-| `0.4`     | Latest 0.4.x                  |
-| `0.4.0`   | Exact release (immutable)     |
+| `0.6`     | Latest 0.6.x                  |
+| `0.6.5`   | Exact release (immutable)     |
 
 ## Setup
 
@@ -284,10 +284,11 @@ remark-bridge migrate
 ### Web Dashboard + PWA
 
 ```bash
-remark-bridge serve-web  # http://localhost:8080
+remark-bridge serve-web      # pip install: defaults to http://localhost:8080
+# docker compose up -d       # bind is 0.0.0.0:8000 (REMARK_WEB_PORT in .env)
 ```
 
-Routes include `/notes`, `/actions`, `/ask`, `/quick-entry`, and `/settings`. When you generate VAPID keys and install the app to your phone's homescreen, Web Push notifications fire for high-priority action items.
+The `pip install` form binds to `web.host` / `web.port` in `config.yaml` (default `127.0.0.1:8080`); the Docker stack maps its internal `:8000` to the host port set via `REMARK_WEB_PORT`. Routes include `/notes`, `/actions`, `/ask`, `/quick-entry`, `/settings` (editable per-section), `/templates` (YAML editor), `/queue` (offline-retry widget), and `/devices` (registered tablets). When VAPID keys are generated and the PWA is installed, Web Push notifications fire for high-priority action items.
 
 ### Plugin System
 
@@ -427,24 +428,29 @@ pip install remark-bridge
 # Run setup
 remark-bridge setup
 
-# Copy service files
-sudo cp systemd/remarkable-bridge.service /etc/systemd/system/
-sudo cp systemd/remarkable-bridge.timer /etc/systemd/system/
+# Copy the split service units (sync daemon + web dashboard)
+sudo cp systemd/remark-bridge-sync.service /etc/systemd/system/
+sudo cp systemd/remark-bridge-sync.timer   /etc/systemd/system/
+sudo cp systemd/remark-bridge-web.service  /etc/systemd/system/
 
-# Set your API key in the service file
-sudo systemctl edit remarkable-bridge
-# Add: Environment=ANTHROPIC_API_KEY=sk-ant-...
+# Drop secrets into /etc/remark-bridge/env (read by both units)
+sudo mkdir -p /etc/remark-bridge
+sudo tee /etc/remark-bridge/env > /dev/null <<'ENV'
+ANTHROPIC_API_KEY=sk-ant-...
+# NOTION_TOKEN=secret_... (optional)
+ENV
+sudo chmod 600 /etc/remark-bridge/env
 
-# Enable and start
 sudo systemctl daemon-reload
-sudo systemctl enable --now remarkable-bridge
+
+# Timer-driven sync (every 15 min by default) + always-on web UI
+sudo systemctl enable --now remark-bridge-sync.timer
+sudo systemctl enable --now remark-bridge-web.service
 ```
 
-For timer-based mode (instead of continuous):
-
-```bash
-sudo systemctl enable --now remarkable-bridge.timer
-```
+For continuous real-time sync (instead of the timer), swap the timer line
+for `sudo systemctl enable --now remark-bridge-sync.service` which runs
+the daemon in long-poll mode.
 
 ## Project Structure
 
@@ -529,9 +535,10 @@ reMark/
 │   └── mcp/                        # MCP server
 │       └── server.py               # Tools for Claude Desktop / Code
 │
-├── tests/                          # 408 tests across all modules
+├── tests/                          # Pytest suite across every module
 ├── scripts/                        # Setup + connection test helpers
-├── systemd/                        # VPS service + timer units
+├── systemd/                        # VPS unit files (sync + web, split)
+├── contrib/obsidian-plugin/        # Companion Obsidian plugin (TypeScript)
 ├── vault_template/                 # Initial Obsidian vault structure
 ├── config.example.yaml             # Full reference config
 ├── pyproject.toml

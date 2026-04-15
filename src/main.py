@@ -58,10 +58,18 @@ def _get_ocr_pipeline(config: AppConfig):
 
 
 @click.group()
-@click.option("--config", "-c", "config_path", default="config.yaml", help="Path to config file")
+@click.option(
+    "--config", "-c", "config_path",
+    default=None,
+    help="Path to config file (defaults to $REMARK_CONFIG or ./config.yaml)",
+)
 @click.pass_context
-def cli(ctx: click.Context, config_path: str) -> None:
+def cli(ctx: click.Context, config_path: str | None) -> None:
     """reMark — reMarkable ↔ Obsidian sync with intelligent processing."""
+    import os
+
+    if config_path is None:
+        config_path = os.environ.get("REMARK_CONFIG", "config.yaml")
     ctx.ensure_object(dict)
     ctx.obj["config"] = load_config(config_path)
 
@@ -123,6 +131,31 @@ def _do_register(auth) -> None:
     except Exception as e:
         click.echo(f"Registration failed: {e}")
         sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--device", "device_id", default="default",
+    help="Pair a specific registered device slug (for multi-device setups)",
+)
+@click.pass_context
+def auth(ctx: click.Context, device_id: str) -> None:
+    """Pair with reMarkable Cloud.
+
+    Prompts for the one-time code from https://my.remarkable.com/device/browser/connect
+    and stores the resulting device token. Use ``--device <id>`` when
+    you've registered multiple tablets via ``remark-bridge device add``
+    (the single-device default writes to the legacy token path).
+    """
+    config: AppConfig = ctx.obj["config"]
+    _setup_logging(config)
+    manager = _get_auth(config, device_id)
+    if manager.has_device_token():
+        click.echo(f"Device token already present for '{device_id}'.")
+        if not click.confirm("Re-pair?", default=False):
+            click.echo("Keeping existing token.")
+            return
+    _do_register(manager)
 
 
 @cli.command()
