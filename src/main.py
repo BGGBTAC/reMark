@@ -1255,6 +1255,66 @@ async def _retag(config: AppConfig, dry_run: bool, limit: int | None) -> None:
     click.echo(f"Updated {updated} note(s).")
 
 
+@cli.group()
+def audit() -> None:
+    """Inspect and prune the structured audit log."""
+
+
+@audit.command("list")
+@click.option("--limit", default=50, type=int)
+@click.option("--offset", default=0, type=int)
+@click.option("--action", default=None, help="Filter by action (e.g. login, http, user_create)")
+@click.option("--user-id", default=None, type=int)
+@click.pass_context
+def audit_list(
+    ctx: click.Context,
+    limit: int,
+    offset: int,
+    action: str | None,
+    user_id: int | None,
+) -> None:
+    """Show recent audit entries."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        rows = state.list_audit(
+            limit=limit, offset=offset, user_id=user_id, action=action,
+        )
+    finally:
+        state.close()
+    if not rows:
+        click.echo("Empty.")
+        return
+    for r in rows:
+        click.echo(
+            f"  [{r['id']:>6}] {r['ts']}  {(r['username'] or '-'):<16} "
+            f"{r['action']:<14} {(r['method'] or '-'):<6} "
+            f"{(r['status'] or ''):<4} {(r['resource'] or '')[:60]}"
+        )
+
+
+@audit.command("prune")
+@click.option(
+    "--days", default=90, type=int,
+    help="Retention window — entries older than this many days are deleted",
+)
+@click.confirmation_option(prompt="Delete old audit entries?")
+@click.pass_context
+def audit_prune(ctx: click.Context, days: int) -> None:
+    """Delete audit entries older than the retention window."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        n = state.audit_prune(days)
+    finally:
+        state.close()
+    click.echo(f"Pruned {n} entries older than {days} days.")
+
+
 @cli.group("bridge-token")
 def bridge_token() -> None:
     """Manage bearer tokens for the bridge HTTP API."""
