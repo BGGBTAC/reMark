@@ -118,6 +118,19 @@ CREATE TABLE IF NOT EXISTS plugin_state (
     last_used_at TEXT
 );
 
+-- Bearer tokens issued to external clients (the Obsidian companion
+-- plugin, CLI scripts, etc.). Only the sha256 hash is stored so a
+-- leaked state DB can't replay tokens. Plain-text is returned once on
+-- issue; callers are responsible for copying it.
+CREATE TABLE IF NOT EXISTS bridge_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked INTEGER NOT NULL DEFAULT 0
+);
+
 -- Offline / retry queue. Captures operations that failed transiently
 -- (network, rate limit, token refresh) so a later sync cycle can pick
 -- them up without losing state. Kept separate from reverse_push_queue
@@ -625,6 +638,73 @@ class SyncState:
             (provider, external_id),
         )
         self.conn.commit()
+
+    # -- Bridge tokens (bearer auth for external clients) --
+
+    def issue_bridge_token(self, label: str) -> str:
+        """Mint a new bearer token and return the plain-text value.
+
+        Only the sha256 hash lands in the DB. The plain value is shown
+        once so the caller can copy it into the Obsidian plugin or a
+        CI secret store.
+        """
+        import hashlib
+        import secrets
+
+        now = datetime.now(UTC).isoformat()
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+        self.conn.execute(
+            """INSERT INTO bridge_tokens
+                 (label, token_hash, created_at, revoked)
+               VALUES (?, ?, ?, 0)""",
+            (label, token_hash, now),
+        )
+        self.conn.commit()
+        self._log("token", None, f"issued bridge token '{label}'")
+        return token
+
+    def verify_bridge_token(self, token: str) -> str | None:
+        """Return the matching label if ``token`` is active, else ``None``.
+
+        Also bumps ``last_used_at`` when the token matches so the CLI
+        and web UI can surface stale tokens.
+        """
+        import hashlib
+
+        if not token:
+            return None
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        row = self.conn.execute(
+            "SELECT id, label FROM bridge_tokens "
+            "WHERE token_hash = ? AND revoked = 0",
+            (token_hash,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        self.conn.execute(
+            "UPDATE bridge_tokens SET last_used_at = ? WHERE id = ?",
+            (datetime.now(UTC).isoformat(), row["id"]),
+        )
+        self.conn.commit()
+        return row["label"]
+
+    def list_bridge_tokens(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, label, created_at, last_used_at, revoked "
+            "FROM bridge_tokens ORDER BY id DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def revoke_bridge_token(self, token_id: int) -> None:
+        self.conn.execute(
+            "UPDATE bridge_tokens SET revoked = 1 WHERE id = ?",
+            (token_id,),
+        )
+        self.conn.commit()
+        self._log("token", None, f"revoked bridge token id={token_id}")
 
     # -- Sync queue (offline / retry) --
 
