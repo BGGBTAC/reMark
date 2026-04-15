@@ -201,12 +201,20 @@ class TestMultiDeviceConfigIsolation:
         ]
 
         # Stub out the heavy parts so we only exercise the loop.
+        # RemarkableCloud + DocumentManager are imported lazily inside
+        # _sync_once, so we patch at the modules where they originate.
         class FakeCloud:
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
 
-        monkeypatch.setattr("src.main.RemarkableCloud", lambda _auth: FakeCloud())
-        monkeypatch.setattr("src.main.DocumentManager", lambda *a, **kw: object())
+        monkeypatch.setattr(
+            "src.remarkable.cloud.RemarkableCloud",
+            lambda _auth: FakeCloud(),
+        )
+        monkeypatch.setattr(
+            "src.remarkable.documents.DocumentManager",
+            lambda *a, **kw: object(),
+        )
         monkeypatch.setattr("src.main._get_auth", lambda *a, **kw: object())
         monkeypatch.setattr("src.main._get_ocr_pipeline", lambda _cfg: object())
 
