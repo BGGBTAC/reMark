@@ -943,6 +943,110 @@ class SyncState:
         self.conn.commit()
         return cur.rowcount or 0
 
+    # -- Reports (v0.7+ scheduled summaries) --
+
+    def create_report(
+        self,
+        name: str,
+        schedule: str,
+        prompt: str,
+        channels: list[str],
+        enabled: bool = True,
+        created_by: int | None = None,
+    ) -> int:
+        import json as _json
+
+        now = datetime.now(UTC).isoformat()
+        cur = self.conn.execute(
+            """INSERT INTO reports
+                 (name, schedule, prompt, channels, enabled,
+                  created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                name, schedule, prompt, _json.dumps(channels),
+                1 if enabled else 0, created_by, now,
+            ),
+        )
+        self.conn.commit()
+        return cur.lastrowid or 0
+
+    def update_report(
+        self,
+        report_id: int,
+        **fields,
+    ) -> None:
+        """Partial update — accepts any of name/schedule/prompt/channels/enabled."""
+        import json as _json
+
+        if not fields:
+            return
+        sets: list[str] = []
+        params: list = []
+        for key in ("name", "schedule", "prompt"):
+            if key in fields:
+                sets.append(f"{key} = ?")
+                params.append(fields[key])
+        if "channels" in fields:
+            sets.append("channels = ?")
+            params.append(_json.dumps(fields["channels"]))
+        if "enabled" in fields:
+            sets.append("enabled = ?")
+            params.append(1 if fields["enabled"] else 0)
+        if "next_run_at" in fields:
+            sets.append("next_run_at = ?")
+            params.append(fields["next_run_at"])
+        if "last_run_at" in fields:
+            sets.append("last_run_at = ?")
+            params.append(fields["last_run_at"])
+        if "last_status" in fields:
+            sets.append("last_status = ?")
+            params.append(fields["last_status"])
+        if "last_error" in fields:
+            sets.append("last_error = ?")
+            params.append(fields["last_error"])
+        if not sets:
+            return
+        params.append(report_id)
+        self.conn.execute(
+            f"UPDATE reports SET {', '.join(sets)} WHERE id = ?",
+            tuple(params),
+        )
+        self.conn.commit()
+
+    def list_reports(self, enabled_only: bool = False) -> list[dict]:
+        sql = "SELECT * FROM reports"
+        if enabled_only:
+            sql += " WHERE enabled = 1"
+        sql += " ORDER BY id ASC"
+        return [dict(r) for r in self.conn.execute(sql).fetchall()]
+
+    def get_report(self, report_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM reports WHERE id = ?", (report_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_report_by_name(self, name: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM reports WHERE name = ?", (name,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def delete_report(self, report_id: int) -> None:
+        self.conn.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+        self.conn.commit()
+
+    def due_reports(self, now_iso: str | None = None) -> list[dict]:
+        """Return enabled reports whose next_run_at is in the past."""
+        now_iso = now_iso or datetime.now(UTC).isoformat()
+        rows = self.conn.execute(
+            """SELECT * FROM reports
+               WHERE enabled = 1
+                 AND (next_run_at IS NULL OR next_run_at <= ?)""",
+            (now_iso,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     # -- Bridge tokens (bearer auth for external clients) --
 
     def issue_bridge_token(self, label: str) -> str:
