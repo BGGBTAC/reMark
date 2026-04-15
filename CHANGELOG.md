@@ -4,6 +4,49 @@ All notable changes to **reMark** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) and its commits group into the
 phases described in the release notes.
 
+## [0.6.0] — 2026-04-15
+
+"Ecosystem". Conditional templates with inheritance, a bearer-token
+HTTP API, and a companion Obsidian plugin that plugs into it.
+
+### Added
+- **Smart templates**: per-field ``when:`` expressions are parsed
+  through a tiny AST-walker sandbox (equality, membership, boolean
+  combinators, literals — no calls, attribute access, or subscripts).
+  Templates can ``extends:`` a parent and override named ``blocks:``
+  so reusable skeletons stay DRY.
+- **Web template editor** under ``/templates``. Tile index of all
+  loaded templates, CodeMirror 6 YAML editor (loaded from esm.sh, no
+  build step), save validates via the engine's own parser, preview
+  renders a one-shot PDF and opens it in a new tab.
+- **Bridge HTTP API** for external clients. New ``GET /api/status``
+  and ``POST /api/push`` endpoints guarded by
+  ``Authorization: Bearer <token>``. Tokens live in a new
+  ``bridge_tokens`` table, only the sha256 hash is persisted, the
+  plain value is printed once on issue.
+- **CLI group** ``remark-bridge bridge-token issue | list | revoke``
+  for managing those tokens.
+- **Obsidian companion plugin** at ``contrib/obsidian-plugin/``
+  (TypeScript, esbuild). Ribbon icon + command to push the active
+  note, status-bar widget that polls ``/api/status`` every 60 s,
+  settings tab for server URL / token / retry attempts / retry
+  delay. Failed requests retry with exponential back-off; each failure
+  surfaces as an Obsidian Notice. Ships with
+  ``COMMUNITY_STORE.md`` documenting the split-into-own-repo flow
+  plus the obsidianmd/obsidian-releases PR checklist.
+
+### Tests
+- ``tests/test_templates_smart.py``: when-grammar edge cases
+  (rejects ``__import__``, attribute access, subscripting), missing
+  identifiers resolve to ``None``, inheritance merges fields,
+  child blocks override parent blocks, cycles are detected without
+  crashing the loader, ``when: false`` actually drops the field from
+  the rendered PDF.
+- ``tests/test_bridge_api.py``: missing / wrong-scheme / invalid /
+  revoked tokens all 401; valid tokens get the expected payload;
+  ``/api/push`` rejects traversal and missing files, queues valid
+  paths, bumps ``last_used_at`` on verify.
+
 ## [0.5.0] — 2026-04-14
 
 "Integrations & Smart". Web-first configuration plus four new features:
