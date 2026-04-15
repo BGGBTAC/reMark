@@ -41,7 +41,9 @@ jobs:
           REMARK_CONFIG: ${{ github.workspace }}/.demo/config.yaml
           REMARK_DEMO_MODE: "1"
         run: |
-          uvicorn src.web.app:app --host 127.0.0.1 --port 8000 \
+          # src.web.app exposes create_app() as a factory rather than
+          # a module-level `app` — --factory tells uvicorn to call it.
+          uvicorn src.web.app:create_app --factory --host 127.0.0.1 --port 8000 \
             > .demo/web.log 2>&1 &
           # Wait for /healthz to flip green (up to 30s)
           for i in $(seq 1 30); do
