@@ -46,6 +46,26 @@ def _write_note(vault_path: Path, folder: str, name: str, title: str, body: str,
     return path
 
 
+def _seed_synced(config, doc_id: str, title: str, folder: str, vault_path: Path):
+    """Insert a sync_state row so /notes (0.6.5+ DB-backed) shows the note."""
+    from src.sync.state import SyncState
+
+    state = SyncState(config.sync.state_db)
+    try:
+        state.mark_synced(
+            doc_id=doc_id,
+            doc_name=title,
+            parent_folder=folder,
+            cloud_hash=f"hash-{doc_id}",
+            vault_path=str(vault_path),
+            ocr_engine="test",
+            page_count=1,
+            action_count=0,
+        )
+    finally:
+        state.close()
+
+
 # =====================
 # Routes
 # =====================
@@ -62,18 +82,29 @@ class TestRoutes:
         assert resp.status_code == 200
         assert "No notes match" in resp.text
 
-    def test_notes_lists_synced(self, client, vault_path):
-        _write_note(vault_path, "Inbox", "sample", "Sample Note",
-                    "# Sample\n\nContent here")
+    def test_notes_lists_synced(self, client, config, vault_path):
+        note_path = _write_note(
+            vault_path, "Inbox", "sample", "Sample Note",
+            "# Sample\n\nContent here",
+        )
+        _seed_synced(config, "doc-1", "Sample Note", "Inbox", note_path)
         resp = client.get("/notes")
         assert resp.status_code == 200
         assert "Sample Note" in resp.text
 
-    def test_notes_filter_query(self, client, vault_path):
-        _write_note(vault_path, "Inbox", "alpha", "Alpha",
-                    "Content about apples")
-        _write_note(vault_path, "Inbox", "beta", "Beta",
-                    "Content about bananas")
+    def test_notes_filter_query(self, client, config, vault_path):
+        # 0.6.5 note filtering happens server-side against doc_name;
+        # content-level search is what /ask is for.
+        alpha_path = _write_note(
+            vault_path, "Inbox", "alpha", "Alpha Apples",
+            "Content about apples",
+        )
+        beta_path = _write_note(
+            vault_path, "Inbox", "beta", "Beta Bananas",
+            "Content about bananas",
+        )
+        _seed_synced(config, "doc-alpha", "Alpha Apples", "Inbox", alpha_path)
+        _seed_synced(config, "doc-beta", "Beta Bananas", "Inbox", beta_path)
 
         resp = client.get("/notes?q=apples")
         assert resp.status_code == 200
