@@ -40,6 +40,10 @@ jobs:
         env:
           REMARK_CONFIG: ${{ github.workspace }}/.demo/config.yaml
           REMARK_DEMO_MODE: "1"
+          # v0.7 seeds an admin user on first boot; pin the password
+          # so the Playwright script below can sign in and reach the
+          # admin-gated pages (/users, /audit, /reports).
+          REMARK_ADMIN_PASSWORD: demo
         run: |
           # src.web.app exposes create_app() as a factory rather than
           # a module-level `app` — --factory tells uvicorn to call it.
@@ -55,6 +59,8 @@ jobs:
           curl -sS http://127.0.0.1:8000/healthz
 
       - name: Capture screenshots
+        env:
+          REMARK_ADMIN_PASSWORD: demo
         run: python scripts/screenshots.py --base http://127.0.0.1:8000 --out screenshots
 
       - name: Upload screenshots as workflow artifact

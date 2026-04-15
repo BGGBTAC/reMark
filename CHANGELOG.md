@@ -4,6 +4,77 @@ All notable changes to **reMark** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) and its commits group into the
 phases described in the release notes.
 
+## [0.7.0] — 2026-04-15
+
+"Multi-user & reporting". Three big additions: per-user accounts with
+vault isolation, a structured audit log, and scheduled Claude-powered
+summaries pushed to Teams / Notion / vault.
+
+### Added
+- **Multi-user web UI**. Session-based login backed by bcrypt
+  (passlib) hashes. New `users` table with role (`admin` | `user`),
+  optional per-user `vault_path`, last-login tracking. Fresh installs
+  auto-seed an `admin` user on first boot — password comes from
+  `REMARK_ADMIN_PASSWORD` if set, otherwise a random token-urlsafe
+  string printed once to the log. `/users` page (admin-only) for
+  creating / toggling / resetting other accounts. Legacy HTTP Basic
+  auth kept as an automation fallback.
+- **Per-user vault isolation**. `sync_state.user_id` and
+  `devices.user_id` columns (additive migration, pre-0.7 rows
+  default to the seeded admin). Dashboard / `/notes` / `/devices`
+  scope their data to the signed-in user; admins see everything.
+- **Audit log**. New `audit_log` table with timestamp, user,
+  action, HTTP method + status, resource, IP, user-agent. A FastAPI
+  middleware auto-logs every state-mutating web request (GETs stay
+  out — uvicorn's access log covers those). CLI helpers
+  `remark-bridge audit list` and `remark-bridge audit prune` (default
+  90-day retention). `/audit` admin-only web route with
+  action / user_id filters, 100/page pagination, and CSV export at
+  `/audit.csv`.
+- **Scheduled reports** (`src/reports/`). New `reports` state table
+  with schedule / prompt / channels / next_run_at bookkeeping. The
+  runner builds context from recent synced notes + sync stats, calls
+  Claude with a concise system prompt, dispatches the rendered
+  Markdown to every configured channel. Three channels implemented:
+    - `vault` — dated Markdown note under `Reports/`
+    - `teams` — Adaptive Card via `microsoft.teams.webhook_url`
+    - `notion` — child page under `notion.vault_mirror_page_id`
+  Missing credentials / disabled integrations come back as
+  per-channel errors (the other channels still deliver).
+- **Report scheduler**. Inline `ReportScheduler` started via FastAPI
+  lifespan — the `serve-web` process covers scheduling alongside the
+  web UI. Minimal cron-ish grammar: `every <N>m|h|d`,
+  `daily HH:MM`, `weekly DAY HH:MM`. Skipped in demo mode.
+- **`/reports` web UI** — admin-gated list + create form + per-row
+  toggle / delete / "Run now". Schedule validation happens at save
+  time, so bad expressions never reach the scheduler loop.
+- **CLI**: `remark-bridge report list | run --id N`.
+- **Config**: new `ReportsConfig` (under `reports:`) with
+  `enabled` + `tick_seconds`. New `web.session_secret` and
+  `web.session_https_only`. All surface as editable web forms
+  under `/settings/reports` and `/settings/web`.
+
+### Changed
+- `_auth_check` is session-first — HTML clients without a session get
+  a 303 to `/login`, JSON/API clients get a 401. Bearer tokens
+  (`/api/*`) and HTTP Basic continue to work unchanged for automation.
+- `SyncEngine.set_device` now takes an optional `user_id` so the CLI
+  loop can tag rows per device owner.
+
+### Dependencies
+- `passlib[bcrypt] >= 1.7.4` — password hashing
+- `itsdangerous >= 2.1` — session cookie signing (pulled via Starlette)
+
+### Tests
+- `tests/test_multi_user.py` — users CRUD, bcrypt round-trip,
+  authenticate success + failure paths, user-scoped state queries.
+- `tests/test_audit.py` — insert shape, filters, limit/offset,
+  user-agent truncation, retention prune.
+- `tests/test_reports.py` — reports CRUD, schedule parser for every
+  accepted form + invalid input, due filter excludes
+  disabled / future-scheduled rows, vault-channel end-to-end smoke
+  test with no API key (exercises the context-dump fallback).
+
 ## [0.6.6] — 2026-04-15
 
 Mini release. Ships the automation behind the wiki screenshots.

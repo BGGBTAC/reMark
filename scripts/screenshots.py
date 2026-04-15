@@ -14,6 +14,7 @@ action; for local runs start a demo server yourself first::
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from urllib.parse import quote
@@ -38,6 +39,10 @@ SHOTS: list[tuple[str, str, dict]] = [
     ("templates-list",      "/templates",                                {}),
     ("templates-edit",      "/templates/meeting",                        {"full_page": True}),
     ("quick-entry",         "/quick-entry",                              {}),
+    ("users-page",          "/users",                                    {"full_page": True}),
+    ("audit",               "/audit",                                    {"full_page": True}),
+    ("reports",             "/reports",                                  {"full_page": True}),
+    ("login",               "/login",                                    {}),
 ]
 
 
@@ -72,6 +77,18 @@ def main() -> int:
             device_scale_factor=2,
         )
         page = ctx.new_page()
+
+        # v0.7+ routes gate on a session cookie. In demo mode the
+        # bridge seeds an `admin` user whose password comes from
+        # REMARK_ADMIN_PASSWORD (set by the workflow); if the env is
+        # missing we still try to render the login + public pages.
+        admin_pw = os.environ.get("REMARK_ADMIN_PASSWORD", "")
+        if admin_pw:
+            page.goto(args.base.rstrip("/") + "/login", wait_until="networkidle")
+            page.fill('input[name="username"]', "admin")
+            page.fill('input[name="password"]', admin_pw)
+            page.click('button[type="submit"]')
+            page.wait_for_url(args.base.rstrip("/") + "/", timeout=10_000)
 
         failed: list[str] = []
         for name, path, opts in SHOTS:
