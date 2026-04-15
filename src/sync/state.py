@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -117,6 +117,60 @@ CREATE TABLE IF NOT EXISTS plugin_state (
     installed_at TEXT NOT NULL,
     last_used_at TEXT
 );
+
+-- Local user accounts for the web UI + per-user vault isolation.
+-- Default deployment (pre-0.7) had a single implicit "admin" user;
+-- the migration in _apply_migrations creates that row so existing
+-- installs stay functional on first boot after upgrade.
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user',      -- 'admin' | 'user'
+    vault_path TEXT,                         -- NULL = fall back to config.obsidian.vault_path
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    last_login_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
+
+-- Structured audit log — distinct from sync_log which tracks
+-- technical sync events. Captures user-initiated actions (login,
+-- settings change, API call) with request metadata.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    user_id INTEGER,
+    username TEXT,
+    action TEXT NOT NULL,
+    resource TEXT,
+    method TEXT,
+    status INTEGER,
+    ip TEXT,
+    user_agent TEXT,
+    details TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
+
+-- Scheduled reports: periodic Claude-powered summaries pushed to
+-- configured output channels (Teams / Notion / Vault).
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    schedule TEXT NOT NULL,                 -- cron string
+    prompt TEXT NOT NULL,                   -- what to ask Claude
+    channels TEXT NOT NULL,                 -- JSON array: ["teams","notion","vault"]
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_run_at TEXT,
+    next_run_at TEXT,
+    last_status TEXT,
+    last_error TEXT,
+    created_by INTEGER,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reports_enabled ON reports(enabled, next_run_at);
 
 -- Bearer tokens issued to external clients (the Obsidian companion
 -- plugin, CLI scripts, etc.). Only the sha256 hash is stored so a
@@ -244,6 +298,29 @@ class SyncState:
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_state_device "
             "ON sync_state(device_id)"
+        )
+
+        # v0.7.0 — per-user isolation. sync_state and devices grow a
+        # user_id column that maps back to the new users table.
+        # Pre-0.7 rows default to 1 (the implicit "admin" user seeded
+        # below), preserving existing data during upgrade.
+        if "user_id" not in cols:
+            self.conn.execute(
+                "ALTER TABLE sync_state ADD COLUMN user_id INTEGER DEFAULT 1"
+            )
+        device_cols = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(devices)").fetchall()
+        }
+        if device_cols and "user_id" not in device_cols:
+            self.conn.execute(
+                "ALTER TABLE devices ADD COLUMN user_id INTEGER DEFAULT 1"
+            )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_state_user ON sync_state(user_id)"
+        )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_devices_user ON devices(user_id)"
         )
 
     def needs_sync(self, doc_id: str, cloud_hash: str) -> bool:
@@ -710,6 +787,145 @@ class SyncState:
             (provider, external_id),
         )
         self.conn.commit()
+
+    # -- Users (v0.7+ multi-user web auth) --
+
+    def create_user(
+        self,
+        username: str,
+        password_hash: str,
+        role: str = "user",
+        vault_path: str | None = None,
+    ) -> int:
+        """Insert a user row. Caller hashes the password with passlib
+        before calling — we never see the plaintext.
+        """
+        now = datetime.now(UTC).isoformat()
+        cur = self.conn.execute(
+            """INSERT INTO users
+                 (username, password_hash, role, vault_path, active, created_at)
+               VALUES (?, ?, ?, ?, 1, ?)""",
+            (username, password_hash, role, vault_path, now),
+        )
+        self.conn.commit()
+        self._log("user", None, f"created user '{username}' ({role})")
+        return cur.lastrowid or 0
+
+    def get_user(self, username: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM users WHERE username = ?", (username,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_user_by_id(self, user_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM users WHERE id = ?", (user_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def list_users(self, active_only: bool = False) -> list[dict]:
+        sql = "SELECT id, username, role, vault_path, active, created_at, last_login_at FROM users"
+        if active_only:
+            sql += " WHERE active = 1"
+        sql += " ORDER BY id ASC"
+        return [dict(r) for r in self.conn.execute(sql).fetchall()]
+
+    def touch_user_login(self, user_id: int) -> None:
+        self.conn.execute(
+            "UPDATE users SET last_login_at = ? WHERE id = ?",
+            (datetime.now(UTC).isoformat(), user_id),
+        )
+        self.conn.commit()
+
+    def set_user_active(self, user_id: int, active: bool) -> None:
+        self.conn.execute(
+            "UPDATE users SET active = ? WHERE id = ?",
+            (1 if active else 0, user_id),
+        )
+        self.conn.commit()
+
+    def set_user_password(self, user_id: int, password_hash: str) -> None:
+        self.conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (password_hash, user_id),
+        )
+        self.conn.commit()
+        self._log("user", None, f"password changed for user_id={user_id}")
+
+    def ensure_default_admin(self, password_hash: str) -> int | None:
+        """Seed a fallback admin on first boot if the users table is
+        empty. Returns the new user_id, or None if the table already
+        has rows.
+        """
+        row = self.conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()
+        if row and row["n"] > 0:
+            return None
+        return self.create_user("admin", password_hash, role="admin")
+
+    # -- Audit log --
+
+    def audit(
+        self,
+        action: str,
+        user_id: int | None = None,
+        username: str | None = None,
+        resource: str | None = None,
+        method: str | None = None,
+        status: int | None = None,
+        ip: str | None = None,
+        user_agent: str | None = None,
+        details: str | None = None,
+    ) -> None:
+        self.conn.execute(
+            """INSERT INTO audit_log
+                 (ts, user_id, username, action, resource, method,
+                  status, ip, user_agent, details)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                datetime.now(UTC).isoformat(), user_id, username, action,
+                resource, method, status, ip, (user_agent or "")[:255], details,
+            ),
+        )
+        self.conn.commit()
+
+    def list_audit(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        user_id: int | None = None,
+        action: str | None = None,
+        since: str | None = None,
+    ) -> list[dict]:
+        where = ["1=1"]
+        params: list = []
+        if user_id is not None:
+            where.append("user_id = ?")
+            params.append(user_id)
+        if action:
+            where.append("action = ?")
+            params.append(action)
+        if since:
+            where.append("ts >= ?")
+            params.append(since)
+        clause = " AND ".join(where)
+        rows = self.conn.execute(
+            f"""SELECT * FROM audit_log
+                WHERE {clause}
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?""",
+            (*params, limit, offset),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def audit_prune(self, retention_days: int) -> int:
+        cutoff = (
+            datetime.now(UTC) - timedelta(days=retention_days)
+        ).isoformat()
+        cur = self.conn.execute(
+            "DELETE FROM audit_log WHERE ts < ?", (cutoff,),
+        )
+        self.conn.commit()
+        return cur.rowcount or 0
 
     # -- Bridge tokens (bearer auth for external clients) --
 
