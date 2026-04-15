@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Audit log — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="flex items-baseline justify-between mb-6">
+  <h1 class="text-2xl font-semibold">Audit log</h1>
+  <a href="/audit.csv{% if filter_action or filter_user_id %}?{% if filter_action %}action={{ filter_action }}{% endif %}{% if filter_user_id %}{% if filter_action %}&{% endif %}user_id={{ filter_user_id }}{% endif %}{% endif %}"
+     class="text-sm px-3 py-1 rounded bg-white border border-gray-300 hover:bg-gray-50">
+    Export CSV
+  </a>
+</div>
+
+<form method="get" class="flex gap-2 mb-4 text-sm">
+  <input type="text" name="action" value="{{ filter_action }}"
+         placeholder="Action (e.g. login, http)"
+         class="rounded border border-gray-300 px-3 py-1.5">
+  <input type="number" name="user_id" value="{{ filter_user_id }}"
+         placeholder="User ID"
+         class="rounded border border-gray-300 px-3 py-1.5 w-28">
+  <button type="submit" class="bg-gray-900 text-white px-3 py-1.5 rounded">Filter</button>
+  <a href="/audit" class="px-3 py-1.5 rounded bg-gray-100 hover:bg-gray-200">Clear</a>
+</form>
+
+{% if rows %}
+<div class="bg-white rounded-lg shadow-sm overflow-hidden">
+  <table class="w-full text-xs">
+    <thead class="bg-gray-50 border-b text-gray-700">
+      <tr>
+        <th class="text-left p-2">#</th>
+        <th class="text-left p-2">Time (UTC)</th>
+        <th class="text-left p-2">User</th>
+        <th class="text-left p-2">Action</th>
+        <th class="text-left p-2">Method</th>
+        <th class="text-left p-2">Status</th>
+        <th class="text-left p-2">Resource</th>
+        <th class="text-left p-2">IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="border-b last:border-0">
+        <td class="p-2 text-gray-400 font-mono">{{ r.id }}</td>
+        <td class="p-2 font-mono">{{ r.ts }}</td>
+        <td class="p-2">{{ r.username or '-' }}{% if r.user_id %} <span class="text-gray-400">#{{ r.user_id }}</span>{% endif %}</td>
+        <td class="p-2 font-mono">{{ r.action }}</td>
+        <td class="p-2">{{ r.method or '' }}</td>
+        <td class="p-2">
+          {% if r.status %}
+            {% if r.status >= 500 %}
+              <span class="text-red-700">{{ r.status }}</span>
+            {% elif r.status >= 400 %}
+              <span class="text-amber-700">{{ r.status }}</span>
+            {% else %}
+              {{ r.status }}
+            {% endif %}
+          {% endif %}
+        </td>
+        <td class="p-2 font-mono text-gray-700">{{ (r.resource or '')[:80] }}</td>
+        <td class="p-2 text-gray-500">{{ r.ip or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="flex justify-between mt-4 text-sm">
+  {% if page > 1 %}
+  <a href="?{% if filter_action %}action={{ filter_action }}&{% endif %}{% if filter_user_id %}user_id={{ filter_user_id }}&{% endif %}page={{ page - 1 }}"
+     class="text-gray-600 hover:text-gray-900">← Previous</a>
+  {% else %}<span></span>{% endif %}
+  <span class="text-gray-400">Page {{ page }}</span>
+  {% if has_more %}
+  <a href="?{% if filter_action %}action={{ filter_action }}&{% endif %}{% if filter_user_id %}user_id={{ filter_user_id }}&{% endif %}page={{ page + 1 }}"
+     class="text-gray-600 hover:text-gray-900">Next →</a>
+  {% else %}<span></span>{% endif %}
+</div>
+{% else %}
+<div class="bg-white rounded-lg shadow-sm p-6 text-center text-gray-500">
+  No audit entries match the current filters.
+</div>
+{% endif %}
+{% endblock %}
