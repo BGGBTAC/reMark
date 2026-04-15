@@ -6,6 +6,7 @@ No build step required. Designed to run via `remark-bridge serve-web`.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import secrets
 from datetime import UTC, datetime
@@ -112,6 +113,34 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         https_only=bool(config.web.session_https_only),
         max_age=60 * 60 * 24 * 14,   # 2 weeks
     )
+
+    # Audit middleware — logs every state-mutating request (POST /
+    # PUT / PATCH / DELETE). GETs are noisy and stay out of the audit
+    # log; they still land in access logs through uvicorn.
+    @app.middleware("http")
+    async def audit_middleware(request: Request, call_next):
+        response = await call_next(request)
+        try:
+            if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+                user = None
+                with contextlib.suppress(Exception):
+                    user = web_auth.current_user(request)
+                state = getattr(app.state, "sync_state", None)
+                if state is not None:
+                    state.audit(
+                        action="http",
+                        user_id=(int(user["id"]) if user else None),
+                        username=(user["username"] if user else None),
+                        resource=str(request.url.path),
+                        method=request.method,
+                        status=response.status_code,
+                        ip=(request.client.host if request.client else None),
+                        user_agent=request.headers.get("user-agent", ""),
+                    )
+        except Exception as exc:  # noqa: BLE001
+            # Audit logging must never take down a request.
+            logger.warning("audit middleware failed: %s", exc)
+        return response
 
     # Mount static files for CSS / JS / manifest / service worker
     app.mount(
