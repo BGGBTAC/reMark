@@ -4,6 +4,98 @@ All notable changes to **reMark** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) and its commits group into the
 phases described in the release notes.
 
+## [0.6.5] — 2026-04-15
+
+Service release. No new features — a full security, correctness,
+performance, and documentation sweep driven by a three-track audit.
+
+### Security
+- **Path traversal** fixed in `/notes/{note_path:path}`. The route now
+  resolves the requested path and refuses anything that lands outside
+  the configured vault root. Previously
+  `GET /notes/../../.remark-bridge/device_token` returned the
+  reMarkable device JWT.
+- **Bridge token verification** switched to constant-time
+  `secrets.compare_digest` in Python. The prior SQLite-level
+  `WHERE token_hash = ?` compare leaked prefix information via
+  response-time differences.
+- **Device token file** is now written through a tempfile opened with
+  `O_EXCL` + `0600`, then `os.replace()`'d into place. Closes the
+  brief window where the old `write_text` + `chmod` sequence left the
+  JWT world-readable.
+- **`when:` expression sandbox** caps inputs at 500 chars / 200 AST
+  nodes and catches `RecursionError` before it escapes. A malicious
+  template YAML with deeply nested boolean ops previously crashed a
+  web worker.
+- **`/ask` error messages** now show a generic "Search failed" text
+  to the browser. The underlying exception (which can carry API keys
+  in URLs or token prefixes) stays in the server log only.
+
+### Performance
+- **Dashboard "Recent notes"** is served from the state DB via a new
+  `state.recent_synced(limit)` helper instead of walking the vault
+  with `rglob` and parsing every markdown frontmatter on each request.
+- **`/notes` list view** filters server-side via
+  `state.list_synced(folder, query)` — no more O(vault) reads per
+  keystroke.
+- **Notion client** holds a long-lived `httpx.AsyncClient` so pushing
+  many pages shares one TLS session.
+- **Web Push** exposes an async `send_push_async` wrapper that
+  offloads `pywebpush` to a thread so broadcast loops don't block the
+  event loop.
+- **State DB** gained `IF NOT EXISTS` indexes on `sync_state.status`,
+  `sync_state.last_synced_at`, and `external_links(provider, status)`.
+
+### Correctness
+- **Multi-device `_sync_once`** deep-copies the AppConfig per device
+  via `model_copy(deep=True)`. An exception mid-cycle no longer leaves
+  another device's sync / ignore filters leaking into the shared
+  config, and concurrent runs (scheduler + manual CLI) stay isolated.
+- **Web `SyncState`** is cached on `app.state` as a process-wide
+  singleton with `_shared=True`, so every `/api/*` request no longer
+  re-runs schema migrations and races the sync daemon for the WAL
+  write lock. Route handlers that `finally: state.close()` are now
+  no-ops on the shared connection.
+
+### Documentation
+- New `remark-bridge auth [--device <id>]` command exists so the
+  pairing flow the README has always documented actually works.
+- `-c/--config` CLI option now falls back to `$REMARK_CONFIG`. The
+  Docker `sync` container previously ignored the mounted
+  `/config/config.yaml` because the default was hard-coded.
+- `.env.example` trimmed of dead env vars that the code never read
+  (`REMARK_WEB_USERNAME/PASSWORD/VAPID_*`, `MS_CLIENT_ID/TENANT_ID`);
+  `generate-vapid` renamed to the real command `vapid-keys`;
+  `NOTION_TOKEN` + `REMARK_CONFIG` documented.
+- README updated with the correct GHCR tag table (0.6.x), the two
+  different default ports (8080 pip vs 8000 Docker), the routes
+  `/queue` / `/devices` / `/templates`, CLI groups added since 0.3
+  (`queue`, `retag`, `bridge-token`, `device remove`, `auth`), and
+  the split systemd setup with `/etc/remark-bridge/env`.
+- `mark_queue_failed` back-off docstring corrected to reflect the
+  actual schedule (5m → 25m → ~2h → cap 6h, not 1m → 5m → 25m).
+- New reference pages under `docs/`:
+  - `BRIDGE_API.md` — bearer-token auth, endpoint shapes, error model.
+  - `TEMPLATES.md` — YAML shape, `when:` grammar, inheritance rules,
+    web editor, CLI entrypoints.
+  - `upgrading.md` — version-by-version migration notes covering
+    0.3.x → 0.6.5.
+- `config.example.yaml` now documents `logging.format: text|json` and
+  the symmetric `devices[].ignore_folders`.
+
+### Removed
+- Legacy combined `systemd/remarkable-bridge.service` and
+  `remarkable-bridge.timer` — the split `remark-bridge-sync` +
+  `remark-bridge-web` units (shipped since 0.3.1) are now the only
+  supported systemd layout.
+
+### Tests
+- `tests/test_security_regressions.py`: locks in every audit fix —
+  path traversal (plain + encoded + absolute), `secrets.compare_digest`
+  usage, `when:` sandbox caps for length / node count / recursion
+  depth, multi-device config isolation, and device-token file
+  permissions after register_device.
+
 ## [0.6.0] — 2026-04-15
 
 "Ecosystem". Conditional templates with inheritance, a bearer-token
