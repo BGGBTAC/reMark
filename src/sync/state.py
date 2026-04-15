@@ -350,6 +350,7 @@ class SyncState:
         page_count: int,
         action_count: int,
         device_id: str = "default",
+        user_id: int = 1,
     ) -> None:
         """Record a successful sync for a document."""
         now = datetime.now(UTC).isoformat()
@@ -358,10 +359,10 @@ class SyncState:
             """INSERT INTO sync_state
                (doc_id, doc_name, parent_folder, cloud_hash, local_hash,
                 version, last_synced_at, vault_path, ocr_engine,
-                page_count, action_count, status, device_id)
+                page_count, action_count, status, device_id, user_id)
                VALUES (?, ?, ?, ?, ?,
                        COALESCE((SELECT version FROM sync_state WHERE doc_id = ?), 0) + 1,
-                       ?, ?, ?, ?, ?, 'synced', ?)
+                       ?, ?, ?, ?, ?, 'synced', ?, ?)
                ON CONFLICT(doc_id) DO UPDATE SET
                  doc_name = excluded.doc_name,
                  parent_folder = excluded.parent_folder,
@@ -374,11 +375,12 @@ class SyncState:
                  page_count = excluded.page_count,
                  action_count = excluded.action_count,
                  status = 'synced',
-                 device_id = excluded.device_id
+                 device_id = excluded.device_id,
+                 user_id = excluded.user_id
             """,
             (doc_id, doc_name, parent_folder, cloud_hash, cloud_hash,
              doc_id, now, vault_path, ocr_engine, page_count, action_count,
-             device_id),
+             device_id, user_id),
         )
         self.conn.commit()
         self._log("sync", doc_id, f"synced {doc_name}")
@@ -428,16 +430,21 @@ class SyncState:
         folder: str | None = None,
         query: str | None = None,
         limit: int = 200,
+        user_id: int | None = None,
     ) -> list[dict]:
         """Server-side filter over sync_state for the /notes list view.
 
         Avoids walking the whole vault and parsing every frontmatter
         block on each filter keystroke. ``folder`` filters by the
         leading path component stored in ``parent_folder``; ``query``
-        does a case-insensitive LIKE against doc_name.
+        does a case-insensitive LIKE against doc_name; ``user_id``
+        scopes the rows when multi-user is in play.
         """
         where = ["status IN ('synced', 'pending_response')"]
         params: list = []
+        if user_id is not None:
+            where.append("user_id = ?")
+            params.append(user_id)
         if folder:
             where.append("(parent_folder = ? OR parent_folder LIKE ?)")
             params.extend([folder, folder + "/%"])
@@ -456,21 +463,30 @@ class SyncState:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def recent_synced(self, limit: int = 10) -> list[dict]:
+    def recent_synced(
+        self, limit: int = 10, user_id: int | None = None,
+    ) -> list[dict]:
         """Return the N most-recently-synced documents.
 
         Backs the dashboard "Recent notes" widget. Sourcing from the
         state DB avoids a full-vault ``rglob`` + frontmatter read on
-        every request — cheap constant-time query instead.
+        every request — cheap constant-time query instead. Pass
+        ``user_id`` to scope multi-user dashboards.
         """
+        where = "status IN ('synced', 'pending_response')"
+        params: list = []
+        if user_id is not None:
+            where += " AND user_id = ?"
+            params.append(user_id)
+        params.append(limit)
         rows = self.conn.execute(
-            """SELECT doc_id, doc_name, parent_folder, vault_path,
+            f"""SELECT doc_id, doc_name, parent_folder, vault_path,
                       last_synced_at, page_count, action_count
                FROM sync_state
-               WHERE status IN ('synced', 'pending_response')
+               WHERE {where}
                ORDER BY last_synced_at DESC
                LIMIT ?""",
-            (limit,),
+            tuple(params),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -1171,13 +1187,27 @@ class SyncState:
         self.conn.commit()
         self._log("device", None, f"registered {device_id} ({label})")
 
-    def list_devices(self, active_only: bool = True) -> list[dict]:
-        """Return registered devices, most recently used first."""
-        sql = "SELECT * FROM devices"
+    def list_devices(
+        self, active_only: bool = True, user_id: int | None = None,
+    ) -> list[dict]:
+        """Return registered devices, most recently used first.
+
+        ``user_id`` scopes the result to devices owned by a specific
+        user; leave ``None`` for CLI / admin contexts that should see
+        every registered tablet.
+        """
+        where: list[str] = []
+        params: list = []
         if active_only:
-            sql += " WHERE active = 1"
+            where.append("active = 1")
+        if user_id is not None:
+            where.append("user_id = ?")
+            params.append(user_id)
+        sql = "SELECT * FROM devices"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY COALESCE(last_sync_at, registered_at) DESC"
-        return [dict(r) for r in self.conn.execute(sql).fetchall()]
+        return [dict(r) for r in self.conn.execute(sql, tuple(params)).fetchall()]
 
     def get_device(self, device_id: str) -> dict | None:
         row = self.conn.execute(
