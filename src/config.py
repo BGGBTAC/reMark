@@ -238,6 +238,13 @@ class WebConfig(BaseModel):
     vapid_public_key: str = ""
     vapid_private_key: str = ""
     vapid_subject: str = "mailto:admin@example.com"
+    # Session cookie secret. Generate once with `python -c 'import
+    # secrets; print(secrets.token_urlsafe(32))'`. Empty = random
+    # per-process (sessions invalidate on restart).
+    session_secret: str = ""
+    # Set True behind a TLS terminator so the session cookie is only
+    # sent over HTTPS.
+    session_https_only: bool = False
 
 
 class TemplatesConfig(BaseModel):

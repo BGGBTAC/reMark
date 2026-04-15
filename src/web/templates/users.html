@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Users — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="flex items-baseline justify-between mb-6">
+  <h1 class="text-2xl font-semibold">Users</h1>
+  <div class="text-xs text-gray-500">
+    signed in as <strong>{{ current_user.username }}</strong>
+    <form method="post" action="/logout" class="inline ml-2">
+      <button class="text-xs text-gray-500 hover:text-gray-900 underline">sign out</button>
+    </form>
+  </div>
+</div>
+
+<div class="bg-white rounded-lg shadow-sm overflow-hidden mb-8">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b">
+      <tr>
+        <th class="text-left p-3">ID</th>
+        <th class="text-left p-3">Username</th>
+        <th class="text-left p-3">Role</th>
+        <th class="text-left p-3">Vault path</th>
+        <th class="text-left p-3">Status</th>
+        <th class="text-left p-3">Last login</th>
+        <th class="text-left p-3 w-64"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr class="border-b last:border-0">
+        <td class="p-3 font-mono text-xs">{{ u.id }}</td>
+        <td class="p-3">{{ u.username }}</td>
+        <td class="p-3">
+          {% if u.role == 'admin' %}
+            <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-xs">admin</span>
+          {% else %}
+            <span class="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs">user</span>
+          {% endif %}
+        </td>
+        <td class="p-3 text-gray-600 text-xs font-mono">{{ u.vault_path or '—' }}</td>
+        <td class="p-3">
+          {% if u.active %}
+            <span class="px-2 py-0.5 rounded bg-green-100 text-green-800 text-xs">active</span>
+          {% else %}
+            <span class="px-2 py-0.5 rounded bg-gray-200 text-gray-600 text-xs">inactive</span>
+          {% endif %}
+        </td>
+        <td class="p-3 text-gray-600 text-xs">{{ u.last_login_at or 'never' }}</td>
+        <td class="p-3">
+          <div class="flex flex-wrap gap-1">
+            {% if u.id != current_user.id %}
+            <form method="post" action="/users/{{ u.id }}/toggle" class="inline">
+              <button class="text-xs px-2 py-0.5 rounded bg-white border border-gray-300 hover:bg-gray-50">
+                {% if u.active %}deactivate{% else %}activate{% endif %}
+              </button>
+            </form>
+            {% endif %}
+            <form method="post" action="/users/{{ u.id }}/password" class="inline flex items-center gap-1">
+              <input type="password" name="password" placeholder="new password" minlength="8"
+                     class="text-xs px-2 py-0.5 rounded border border-gray-300 w-32" required>
+              <button class="text-xs px-2 py-0.5 rounded bg-white border border-gray-300 hover:bg-gray-50">
+                reset
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="text-lg font-semibold mb-2">Create user</h2>
+<form method="post" action="/users/create" class="bg-white rounded-lg shadow-sm p-4 grid md:grid-cols-4 gap-3">
+  <div>
+    <label class="block text-xs text-gray-700 mb-1">Username</label>
+    <input type="text" name="username" required class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
+  </div>
+  <div>
+    <label class="block text-xs text-gray-700 mb-1">Password</label>
+    <input type="password" name="password" required minlength="8"
+           class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
+  </div>
+  <div>
+    <label class="block text-xs text-gray-700 mb-1">Role</label>
+    <select name="role" class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
+      <option value="user">user</option>
+      <option value="admin">admin</option>
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs text-gray-700 mb-1">Vault path (optional)</label>
+    <input type="text" name="vault_path" placeholder="/vault/<user>"
+           class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
+  </div>
+  <div class="md:col-span-4">
+    <button type="submit" class="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800">
+      Create
+    </button>
+  </div>
+</form>
+{% endblock %}

@@ -16,10 +16,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 
 from src.config import AppConfig, load_config
 from src.obsidian.vault import ObsidianVault
 from src.sync.state import SyncState
+from src.web import auth as web_auth
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +97,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     app = FastAPI(title=config.web.app_name, openapi_url=None)
 
+    # Session cookies — user_id + username only. The secret_key comes
+    # from config; fall back to a random per-process value so an
+    # unconfigured fresh install still boots (sessions reset on
+    # restart, which is the right behaviour there).
+    secret_key = (config.web.session_secret or "").strip()
+    if not secret_key:
+        secret_key = secrets.token_urlsafe(32)
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=secret_key,
+        session_cookie="remark_session",
+        same_site="lax",
+        https_only=bool(config.web.session_https_only),
+        max_age=60 * 60 * 24 * 14,   # 2 weeks
+    )
+
     # Mount static files for CSS / JS / manifest / service worker
     app.mount(
         "/static",
@@ -104,30 +122,48 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     templates.env.globals["app_name"] = config.web.app_name
 
-    def _auth_check(
-        credentials: HTTPBasicCredentials | None = Depends(_security),
-    ) -> None:
-        """Optional HTTP Basic auth when credentials are configured."""
-        if not config.web.username and not config.web.password:
-            return
-        if credentials is None:
+    def _auth_check(request: Request) -> dict:
+        """Session-first auth, with the legacy HTTP Basic path as a
+        fallback for automation scripts that already rely on it.
+
+        Returns the authenticated user dict so downstream handlers
+        can scope their data (per-user vaults, audit metadata, ...).
+        """
+        user = web_auth.current_user(request)
+        if user is not None:
+            return user
+
+        # Legacy Basic auth fallback — same semantics as pre-0.7.
+        if config.web.username and config.web.password:
+            header = request.headers.get("authorization", "")
+            if header.lower().startswith("basic "):
+                from base64 import b64decode
+                try:
+                    raw = b64decode(header.split(" ", 1)[1]).decode()
+                    u, _, p = raw.partition(":")
+                except Exception:
+                    u, p = "", ""
+                ok_user = secrets.compare_digest(
+                    u.encode(), config.web.username.encode(),
+                )
+                ok_pass = secrets.compare_digest(
+                    p.encode(), config.web.password.encode(),
+                )
+                if ok_user and ok_pass:
+                    return {"id": None, "username": config.web.username, "role": "admin"}
+
+        # No session + no Basic match → redirect browsers to /login,
+        # return 401 to JSON/API clients.
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Auth required",
-                headers={"WWW-Authenticate": "Basic"},
+                status_code=status.HTTP_303_SEE_OTHER,
+                headers={"Location": "/login"},
             )
-        ok_user = secrets.compare_digest(
-            credentials.username.encode(), config.web.username.encode(),
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Auth required",
         )
-        ok_pass = secrets.compare_digest(
-            credentials.password.encode(), config.web.password.encode(),
-        )
-        if not (ok_user and ok_pass):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials",
-                headers={"WWW-Authenticate": "Basic"},
-            )
 
     # -- State accessors --
 
@@ -153,9 +189,131 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             cached = SyncState(resolve_path(config.sync.state_db))
             cached._shared = True  # marks close() as a no-op
             app.state.sync_state = cached
+            # v0.7+ bootstrap — seeds an admin user on a fresh DB.
+            # Safe to call on every restart (no-op when users exist).
+            try:
+                web_auth.bootstrap_admin(cached)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("admin bootstrap failed: %s", exc)
         return cached
 
     # -- Routes --
+
+    @app.get("/login", response_class=HTMLResponse)
+    async def login_form(request: Request, error: str | None = None):
+        return templates.TemplateResponse(
+            request, "login.html", {"error": error},
+        )
+
+    @app.post("/login")
+    async def login_submit(
+        request: Request,
+        username: str = Form(...),
+        password: str = Form(...),
+    ):
+        state = get_state()
+        user = web_auth.authenticate(state, username, password)
+        if user is None:
+            state.audit(
+                action="login_failed", username=username,
+                ip=(request.client.host if request.client else None),
+                user_agent=request.headers.get("user-agent", ""),
+            )
+            return templates.TemplateResponse(
+                request, "login.html",
+                {"error": "Invalid username or password."},
+                status_code=401,
+            )
+        request.session["user_id"] = int(user["id"])
+        request.session["username"] = user["username"]
+        state.audit(
+            action="login", user_id=int(user["id"]),
+            username=user["username"],
+            ip=(request.client.host if request.client else None),
+            user_agent=request.headers.get("user-agent", ""),
+        )
+        return RedirectResponse(url="/", status_code=303)
+
+    @app.post("/logout")
+    async def logout(request: Request):
+        state = get_state()
+        user_id = request.session.get("user_id")
+        username = request.session.get("username")
+        request.session.clear()
+        if user_id:
+            state.audit(
+                action="logout", user_id=int(user_id), username=username,
+            )
+        return RedirectResponse(url="/login", status_code=303)
+
+    @app.get("/users", response_class=HTMLResponse)
+    async def users_view(request: Request, _=Depends(_auth_check)):
+        admin = web_auth.require_admin(request)
+        state = get_state()
+        return templates.TemplateResponse(
+            request, "users.html",
+            {"users": state.list_users(), "current_user": admin},
+        )
+
+    @app.post("/users/create")
+    async def users_create(
+        request: Request,
+        username: str = Form(...),
+        password: str = Form(...),
+        role: str = Form("user"),
+        vault_path: str = Form(""),
+    ):
+        admin = web_auth.require_admin(request)
+        state = get_state()
+        if state.get_user(username):
+            return RedirectResponse(url="/users?error=exists", status_code=303)
+        if role not in ("admin", "user"):
+            role = "user"
+        user_id = state.create_user(
+            username=username,
+            password_hash=web_auth.hash_password(password),
+            role=role,
+            vault_path=(vault_path.strip() or None),
+        )
+        state.audit(
+            action="user_create", user_id=admin["id"], username=admin["username"],
+            resource=f"user:{user_id}", details=f"created '{username}' ({role})",
+        )
+        return RedirectResponse(url="/users", status_code=303)
+
+    @app.post("/users/{user_id}/toggle")
+    async def users_toggle(request: Request, user_id: int):
+        admin = web_auth.require_admin(request)
+        state = get_state()
+        target = state.get_user_by_id(user_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        if target["id"] == admin["id"]:
+            raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
+        state.set_user_active(user_id, not bool(target["active"]))
+        state.audit(
+            action="user_toggle", user_id=admin["id"], username=admin["username"],
+            resource=f"user:{user_id}",
+            details=f"active={not bool(target['active'])}",
+        )
+        return RedirectResponse(url="/users", status_code=303)
+
+    @app.post("/users/{user_id}/password")
+    async def users_password(
+        request: Request,
+        user_id: int,
+        password: str = Form(...),
+    ):
+        admin = web_auth.require_admin(request)
+        state = get_state()
+        if not password or len(password) < 8:
+            raise HTTPException(status_code=400, detail="Password too short (min 8 chars)")
+        state.set_user_password(user_id, web_auth.hash_password(password))
+        state.audit(
+            action="user_password", user_id=admin["id"], username=admin["username"],
+            resource=f"user:{user_id}",
+        )
+        return RedirectResponse(url="/users", status_code=303)
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request, _=Depends(_auth_check)):

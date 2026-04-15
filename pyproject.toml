@@ -40,6 +40,8 @@ dependencies = [
     "jinja2>=3.1",
     "pywebpush>=2.0.3",
     "ruamel.yaml>=0.18",
+    "passlib[bcrypt]>=1.7.4",
+    "itsdangerous>=2.1",
 ]
 
 [project.optional-dependencies]
