@@ -199,7 +199,28 @@ class SyncState:
     def _ensure_schema(self) -> None:
         self.conn.executescript(SCHEMA)
         self._apply_migrations()
+        self._ensure_indexes()
         self.conn.commit()
+
+    def _ensure_indexes(self) -> None:
+        """Best-effort indexes for v0.6.5 hot paths.
+
+        Added after-the-fact via ``IF NOT EXISTS`` so upgrades don't
+        need a dedicated migration step. Dashboard widgets and the
+        offline queue both do ``WHERE status = ?`` scans — covered now.
+        """
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_state_status "
+            "ON sync_state(status)"
+        )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_state_synced_at "
+            "ON sync_state(last_synced_at)"
+        )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_external_links_provider_status "
+            "ON external_links(provider, status)"
+        )
 
     def _apply_migrations(self) -> None:
         """Apply additive migrations for pre-existing databases.
@@ -324,6 +345,57 @@ class SyncState:
             "SELECT * FROM sync_state WHERE status = 'pending_response'"
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def list_synced(
+        self,
+        folder: str | None = None,
+        query: str | None = None,
+        limit: int = 200,
+    ) -> list[dict]:
+        """Server-side filter over sync_state for the /notes list view.
+
+        Avoids walking the whole vault and parsing every frontmatter
+        block on each filter keystroke. ``folder`` filters by the
+        leading path component stored in ``parent_folder``; ``query``
+        does a case-insensitive LIKE against doc_name.
+        """
+        where = ["status IN ('synced', 'pending_response')"]
+        params: list = []
+        if folder:
+            where.append("(parent_folder = ? OR parent_folder LIKE ?)")
+            params.extend([folder, folder + "/%"])
+        if query:
+            where.append("LOWER(doc_name) LIKE ?")
+            params.append("%" + query.lower() + "%")
+        clause = " AND ".join(where)
+        rows = self.conn.execute(
+            f"""SELECT doc_id, doc_name, parent_folder, vault_path,
+                       page_count, action_count, last_synced_at
+                FROM sync_state
+                WHERE {clause}
+                ORDER BY doc_name ASC
+                LIMIT ?""",
+            (*params, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def recent_synced(self, limit: int = 10) -> list[dict]:
+        """Return the N most-recently-synced documents.
+
+        Backs the dashboard "Recent notes" widget. Sourcing from the
+        state DB avoids a full-vault ``rglob`` + frontmatter read on
+        every request — cheap constant-time query instead.
+        """
+        rows = self.conn.execute(
+            """SELECT doc_id, doc_name, parent_folder, vault_path,
+                      last_synced_at, page_count, action_count
+               FROM sync_state
+               WHERE status IN ('synced', 'pending_response')
+               ORDER BY last_synced_at DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def list_active_docs(self) -> list[dict]:
         """Return all synced document entries (not errored, not pending)."""

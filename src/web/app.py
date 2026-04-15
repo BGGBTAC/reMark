@@ -152,29 +152,30 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             usage = state.get_api_usage_summary(days=30)
             recent_log = state.get_recent_log(limit=10)
             queue_summary = state.queue_summary()
+            recent_rows = state.recent_synced(limit=10)
         finally:
             state.close()
 
+        # Pull "Recent notes" from the state DB instead of walking the
+        # whole vault with rglob on every request. The vault path
+        # lookup remains so we can link to the rendered note.
         vault = get_vault()
+        vault_root = vault.path.resolve()
         recent_notes = []
-        for md in sorted(
-            vault.path.rglob("*.md"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )[:10]:
-            result = vault.read_note(md)
-            if result is None:
-                continue
-            fm, _ = result
-            if fm.get("source") == "remarkable":
-                recent_notes.append({
-                    "title": fm.get("title", md.stem),
-                    "path": str(md.relative_to(vault.path)),
-                    "summary": fm.get("summary", "")[:120],
-                    "modified": datetime.fromtimestamp(
-                        md.stat().st_mtime, tz=UTC,
-                    ).strftime("%Y-%m-%d %H:%M"),
-                })
+        for row in recent_rows:
+            vault_path = Path(row["vault_path"]) if row["vault_path"] else None
+            rel = ""
+            if vault_path is not None:
+                try:
+                    rel = str(vault_path.resolve().relative_to(vault_root))
+                except (ValueError, OSError):
+                    rel = vault_path.name
+            recent_notes.append({
+                "title": row["doc_name"] or Path(row["vault_path"] or "").stem,
+                "path": rel,
+                "summary": (row.get("parent_folder") or "")[:120],
+                "modified": row["last_synced_at"] or "",
+            })
 
         return templates.TemplateResponse(
             request, "dashboard.html",
@@ -193,28 +194,27 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         _=Depends(_auth_check),
     ):
         vault = get_vault()
-        notes = []
-        for md in vault.path.rglob("*.md"):
-            result = vault.read_note(md)
-            if result is None:
-                continue
-            fm, content = result
-            if fm.get("source") != "remarkable":
-                continue
-            rel = str(md.relative_to(vault.path))
-            if folder and not rel.startswith(folder):
-                continue
-            if q and q.lower() not in (fm.get("title", "") + content).lower():
-                continue
-            notes.append({
-                "title": fm.get("title", md.stem),
-                "path": rel,
-                "summary": fm.get("summary", "")[:160],
-                "tags": fm.get("tags", []) or [],
-                "action_items": fm.get("action_items", 0),
-            })
+        state = get_state()
+        try:
+            rows = state.list_synced(folder=folder, query=q, limit=300)
+        finally:
+            state.close()
 
-        notes.sort(key=lambda n: n["title"])
+        vault_root = vault.path.resolve()
+        notes = []
+        for row in rows:
+            vault_path = row.get("vault_path") or ""
+            try:
+                rel = str(Path(vault_path).resolve().relative_to(vault_root))
+            except (ValueError, OSError):
+                rel = Path(vault_path).name
+            notes.append({
+                "title": row["doc_name"] or Path(vault_path).stem,
+                "path": rel,
+                "summary": (row.get("parent_folder") or "")[:160],
+                "tags": [],
+                "action_items": row.get("action_count") or 0,
+            })
 
         return templates.TemplateResponse(
             request, "notes.html",
