@@ -279,6 +279,26 @@ remark-bridge vapid-keys
 
 # One-time import of all existing notebooks
 remark-bridge migrate
+
+# Multi-device (0.4)
+remark-bridge device add --id pro --label "Paper Pro" --subfolder rm-pro
+remark-bridge device list
+remark-bridge device remove --id pro
+remark-bridge auth --device pro              # pair a registered tablet
+
+# Offline retry queue (0.5)
+remark-bridge queue list
+remark-bridge queue retry --id 42
+remark-bridge queue clear --status failed
+
+# Backfill tags after flipping hierarchical_tags (0.5)
+remark-bridge retag --dry-run
+remark-bridge retag --limit 50
+
+# Bridge API tokens for the Obsidian companion plugin (0.6)
+remark-bridge bridge-token issue --label obsidian
+remark-bridge bridge-token list
+remark-bridge bridge-token revoke --id 3
 ```
 
 ### Web Dashboard + PWA
