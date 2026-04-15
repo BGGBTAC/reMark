@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -21,7 +22,8 @@ def send_push(
     """Fan-out a notification to every registered subscription.
 
     Returns the number of messages successfully sent. Silently does
-    nothing if VAPID keys are not configured.
+    nothing if VAPID keys are not configured. This is a blocking call
+    — use :func:`send_push_async` from async contexts.
     """
     if not config.vapid_public_key or not config.vapid_private_key:
         logger.debug("VAPID keys missing, skipping push")
@@ -63,6 +65,25 @@ def send_push(
             logger.warning("WebPush unexpected error: %s", e)
 
     return sent
+
+
+async def send_push_async(
+    config: WebConfig,
+    state: SyncState,
+    title: str,
+    body: str,
+    url: str = "/",
+) -> int:
+    """Async wrapper that offloads ``send_push`` to a thread.
+
+    ``pywebpush`` is synchronous and does one requests call per
+    subscriber. Running it directly from an async route blocks the
+    event loop for hundreds of milliseconds per subscription; wrapping
+    it in ``asyncio.to_thread`` keeps other requests moving.
+    """
+    return await asyncio.to_thread(
+        send_push, config, state, title, body, url,
+    )
 
 
 def generate_vapid_keys() -> tuple[str, str]:

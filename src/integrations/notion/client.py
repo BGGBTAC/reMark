@@ -27,13 +27,19 @@ class NotionError(Exception):
 
 
 class NotionClient:
-    """Minimal async Notion API client."""
+    """Minimal async Notion API client.
+
+    Holds a long-lived ``httpx.AsyncClient`` so a sync cycle pushing
+    many pages reuses the TLS session instead of re-handshaking for
+    every call.
+    """
 
     def __init__(self, token: str, timeout: float = 30.0):
         if not token:
             raise ValueError("Notion integration token is empty")
         self._token = token
         self._timeout = timeout
+        self._client: httpx.AsyncClient | None = None
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -42,6 +48,15 @@ class NotionClient:
             "Content-Type": "application/json",
         }
 
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self._timeout)
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+
     async def _request(
         self,
         method: str,
@@ -49,10 +64,10 @@ class NotionClient:
         json_body: dict | None = None,
     ) -> dict[str, Any]:
         url = f"{NOTION_API_BASE}{path}"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.request(
-                method, url, headers=self._headers(), json=json_body,
-            )
+        client = await self._get_client()
+        resp = await client.request(
+            method, url, headers=self._headers(), json=json_body,
+        )
         if resp.status_code >= 400:
             raise NotionError(
                 f"Notion {method} {path} → HTTP {resp.status_code}: "
