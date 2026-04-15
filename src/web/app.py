@@ -96,7 +96,47 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         except Exception as exc:  # noqa: BLE001 — demo must never crash the app
             logger.warning("demo seed failed: %s", exc)
 
-    app = FastAPI(title=config.web.app_name, openapi_url=None)
+    # FastAPI lifespan — brings the report scheduler up alongside the
+    # app so a single serve-web process covers both. Skipped in demo
+    # mode (screenshot workflow) and when reports are turned off.
+    import asyncio as _asyncio
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(_app):  # noqa: ANN001
+        scheduler_task = None
+        reports_cfg = getattr(config, "reports", None)
+        reports_enabled = (
+            reports_cfg is None or getattr(reports_cfg, "enabled", True)
+        )
+        if reports_enabled and not demo.is_enabled():
+            try:
+                from src.reports.scheduler import ReportScheduler
+
+                tick = 60
+                if reports_cfg is not None:
+                    tick = getattr(reports_cfg, "tick_seconds", 60)
+                scheduler = ReportScheduler(
+                    config, get_state(), tick_seconds=tick,
+                )
+                _app.state.report_scheduler = scheduler
+                scheduler_task = _asyncio.create_task(scheduler.run())
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("report scheduler failed to start: %s", exc)
+        try:
+            yield
+        finally:
+            if scheduler_task is not None:
+                _app.state.report_scheduler.stop()
+                scheduler_task.cancel()
+                try:
+                    await scheduler_task
+                except (_asyncio.CancelledError, Exception):
+                    pass
+
+    app = FastAPI(
+        title=config.web.app_name, openapi_url=None, lifespan=lifespan,
+    )
 
     # Session cookies — user_id + username only. The secret_key comes
     # from config; fall back to a random per-process value so an
@@ -288,6 +328,105 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 action="logout", user_id=int(user_id), username=username,
             )
         return RedirectResponse(url="/login", status_code=303)
+
+    @app.get("/reports", response_class=HTMLResponse)
+    async def reports_view(
+        request: Request, _=Depends(_auth_check),
+        saved: str | None = None, error: str | None = None,
+    ):
+        web_auth.require_admin(request)
+        state = get_state()
+        return templates.TemplateResponse(
+            request, "reports.html",
+            {
+                "reports": state.list_reports(),
+                "saved": saved, "error": error,
+            },
+        )
+
+    @app.post("/reports/create")
+    async def reports_create(
+        request: Request,
+        name: str = Form(...),
+        schedule: str = Form(...),
+        prompt: str = Form(...),
+        channels: list[str] = Form(default=[]),
+        enabled: str = Form("on"),
+    ):
+        admin = web_auth.require_admin(request)
+        state = get_state()
+        if state.get_report_by_name(name):
+            return RedirectResponse("/reports?error=exists", status_code=303)
+        if not channels:
+            return RedirectResponse("/reports?error=no-channels", status_code=303)
+        from src.reports.scheduler import next_run
+
+        try:
+            first_run = next_run(schedule, datetime.now(UTC))
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/reports?error={str(exc)[:80]}", status_code=303,
+            )
+        report_id = state.create_report(
+            name=name,
+            schedule=schedule,
+            prompt=prompt,
+            channels=channels,
+            enabled=(enabled == "on"),
+            created_by=int(admin["id"]),
+        )
+        state.update_report(report_id, next_run_at=first_run.isoformat())
+        return RedirectResponse("/reports?saved=1", status_code=303)
+
+    @app.post("/reports/{report_id}/toggle")
+    async def reports_toggle(request: Request, report_id: int):
+        web_auth.require_admin(request)
+        state = get_state()
+        report = state.get_report(report_id)
+        if report is None:
+            raise HTTPException(status_code=404)
+        state.update_report(report_id, enabled=not bool(report["enabled"]))
+        return RedirectResponse("/reports", status_code=303)
+
+    @app.post("/reports/{report_id}/delete")
+    async def reports_delete(request: Request, report_id: int):
+        web_auth.require_admin(request)
+        state = get_state()
+        state.delete_report(report_id)
+        return RedirectResponse("/reports", status_code=303)
+
+    @app.post("/reports/{report_id}/run")
+    async def reports_run_now(request: Request, report_id: int):
+        """Ad-hoc trigger — runs the report immediately, bypassing the schedule."""
+        web_auth.require_admin(request)
+        state = get_state()
+        report = state.get_report(report_id)
+        if report is None:
+            raise HTTPException(status_code=404)
+        from src.reports.runner import run_report
+
+        try:
+            result = await run_report(report, state, config)
+            state.update_report(
+                report_id,
+                last_run_at=datetime.now(UTC).isoformat(),
+                last_status=("ok" if result.ok else "partial"),
+                last_error=(
+                    "; ".join(f"{c}: {e}" for c, e in result.channels_failed)
+                    if result.channels_failed else None
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            state.update_report(
+                report_id,
+                last_run_at=datetime.now(UTC).isoformat(),
+                last_status="error",
+                last_error=str(exc)[:500],
+            )
+            return RedirectResponse(
+                f"/reports?error={str(exc)[:80]}", status_code=303,
+            )
+        return RedirectResponse("/reports?saved=1", status_code=303)
 
     @app.get("/audit", response_class=HTMLResponse)
     async def audit_view(
@@ -955,6 +1094,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         ("reverse_sync", "Reverse sync", "reverse_sync"),
         ("response", "Responses", "response"),
         ("templates", "Templates", "templates"),
+        ("reports", "Reports", "reports"),
         ("plugins", "Plugins", "plugins"),
         ("web", "Web UI", "web"),
         ("logging", "Logging", "logging"),

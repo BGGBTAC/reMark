@@ -1256,6 +1256,66 @@ async def _retag(config: AppConfig, dry_run: bool, limit: int | None) -> None:
 
 
 @cli.group()
+def report() -> None:
+    """Manage scheduled reports."""
+
+
+@report.command("list")
+@click.pass_context
+def report_list(ctx: click.Context) -> None:
+    """Show every configured report."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        rows = state.list_reports()
+    finally:
+        state.close()
+    if not rows:
+        click.echo("No reports configured.")
+        return
+    for r in rows:
+        status = "enabled" if r["enabled"] else "disabled"
+        last = r.get("last_status") or "never"
+        click.echo(
+            f"  [{r['id']:>3}] {r['name']:<24} schedule={r['schedule']:<24} "
+            f"[{status}]  last={last}  next={r.get('next_run_at') or '—'}"
+        )
+
+
+@report.command("run")
+@click.option("--id", "report_id", type=int, required=True, help="Report id (from `report list`)")
+@click.pass_context
+def report_run(ctx: click.Context, report_id: int) -> None:
+    """Fire a single report immediately, bypassing the schedule."""
+    config: AppConfig = ctx.obj["config"]
+    _setup_logging(config)
+    asyncio.run(_report_run(config, report_id))
+
+
+async def _report_run(config: AppConfig, report_id: int) -> None:
+    from src.reports.runner import run_report
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        report = state.get_report(report_id)
+        if report is None:
+            click.echo(f"No report with id={report_id}", err=True)
+            sys.exit(1)
+        result = await run_report(report, state, config)
+    finally:
+        state.close()
+
+    click.echo(f"Report '{result.name}' delivered:")
+    for ch in result.channels_ok:
+        click.echo(f"  ✓ {ch}")
+    for ch, err in result.channels_failed:
+        click.echo(f"  ✗ {ch}: {err}")
+
+
+@cli.group()
 def audit() -> None:
     """Inspect and prune the structured audit log."""
 
