@@ -14,6 +14,16 @@ Write on your reMarkable. reMark handles the rest — your handwritten notes bec
 
 > **Latest:** v0.6.6 — Mini release: wiki screenshots are now regenerated on every `v*` tag via a Playwright workflow driving a demo-seeded web server (`REMARK_DEMO_MODE=1`). See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
+<p align="center">
+  <a href="https://github.com/BGGBTAC/reMark/wiki/Web-Dashboard">
+    <img src="https://raw.githubusercontent.com/wiki/BGGBTAC/reMark/images/dashboard.png" alt="reMark Bridge dashboard" width="900">
+  </a>
+</p>
+
+<p align="center">
+  <sub>The dashboard on a demo-seeded vault. More views in the <a href="#screenshots">Screenshots</a> section below and in the <a href="https://github.com/BGGBTAC/reMark/wiki">Wiki</a>.</sub>
+</p>
+
 ---
 
 ## Features
@@ -53,6 +63,41 @@ Write on your reMarkable. reMark handles the rest — your handwritten notes bec
 - **Cost tracking** — token usage and USD cost logged per API call
 - **Health check** — `remark-bridge doctor` verifies config, auth, vault, API keys, and system deps
 - **Idempotent** — SQLite state tracking with WAL mode; notes are never processed twice
+
+## Screenshots
+
+All shots are regenerated automatically on every release — see [.github/workflows/screenshots.yml](.github/workflows/screenshots.yml). The full gallery (settings forms, `/ask`, `/actions`, `/quick-entry`, every device / queue / templates page) lives on the [Wiki](https://github.com/BGGBTAC/reMark/wiki).
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/BGGBTAC/reMark/wiki/Web-Dashboard">
+        <img src="https://raw.githubusercontent.com/wiki/BGGBTAC/reMark/images/notes-list.png" alt="Notes list" width="440">
+      </a>
+      <br><sub><b>Notes list</b> — DB-backed filter + folder scope</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/BGGBTAC/reMark/wiki/Templates">
+        <img src="https://raw.githubusercontent.com/wiki/BGGBTAC/reMark/images/templates-edit.png" alt="Templates editor" width="440">
+      </a>
+      <br><sub><b>Template editor</b> — CodeMirror 6 + live PDF preview</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/BGGBTAC/reMark/wiki/Configuration-Reference">
+        <img src="https://raw.githubusercontent.com/wiki/BGGBTAC/reMark/images/settings-processing.png" alt="Processing settings form" width="440">
+      </a>
+      <br><sub><b>Settings form</b> — auto-rendered from Pydantic, secrets masked</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/BGGBTAC/reMark/wiki/Multi-Device">
+        <img src="https://raw.githubusercontent.com/wiki/BGGBTAC/reMark/images/queue.png" alt="Offline queue" width="440">
+      </a>
+      <br><sub><b>Offline / retry queue</b> — per-row retry, back-off status</sub>
+    </td>
+  </tr>
+</table>
 
 ## Architecture
 
