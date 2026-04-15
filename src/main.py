@@ -1221,6 +1221,73 @@ async def _retag(config: AppConfig, dry_run: bool, limit: int | None) -> None:
     click.echo(f"Updated {updated} note(s).")
 
 
+@cli.group("bridge-token")
+def bridge_token() -> None:
+    """Manage bearer tokens for the bridge HTTP API."""
+
+
+@bridge_token.command("issue")
+@click.option("--label", required=True, help="Human-readable label (e.g. 'obsidian-macbook')")
+@click.pass_context
+def bridge_token_issue(ctx: click.Context, label: str) -> None:
+    """Generate a new bearer token. Shown once — copy it now."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        token = state.issue_bridge_token(label)
+    finally:
+        state.close()
+
+    click.echo("")
+    click.echo(f"  Token for '{label}':")
+    click.echo(f"    {token}")
+    click.echo("")
+    click.echo("  Copy this now — it won't be shown again.")
+
+
+@bridge_token.command("list")
+@click.pass_context
+def bridge_token_list(ctx: click.Context) -> None:
+    """Show issued tokens (not the secret — only labels and status)."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        rows = state.list_bridge_tokens()
+    finally:
+        state.close()
+
+    if not rows:
+        click.echo("No tokens issued.")
+        return
+    for row in rows:
+        status = "revoked" if row["revoked"] else "active"
+        last = row.get("last_used_at") or "never"
+        click.echo(
+            f"  [{row['id']:>3}] {row['label']:<32} "
+            f"[{status}]  last_used={last}"
+        )
+
+
+@bridge_token.command("revoke")
+@click.option("--id", "token_id", type=int, required=True)
+@click.pass_context
+def bridge_token_revoke(ctx: click.Context, token_id: int) -> None:
+    """Revoke a token. Clients using it start getting 401s immediately."""
+    config: AppConfig = ctx.obj["config"]
+    from src.sync.state import SyncState
+
+    state = SyncState(resolve_path(config.sync.state_db))
+    try:
+        state.revoke_bridge_token(token_id)
+    finally:
+        state.close()
+    click.echo(f"Token {token_id} revoked.")
+
+
 @cli.group()
 def queue() -> None:
     """Inspect and manage the offline/retry queue."""

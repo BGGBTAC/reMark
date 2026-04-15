@@ -359,6 +359,82 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
         return RedirectResponse(url="/notes", status_code=303)
 
+    # -- Bridge API (bearer-token auth, for external clients like the
+    # Obsidian companion plugin) ---------------------------------------
+
+    def _bridge_auth(request: Request) -> str:
+        """Resolve a Bearer token to a label. 401 on anything invalid."""
+        header = request.headers.get("authorization", "")
+        if not header.lower().startswith("bearer "):
+            raise HTTPException(
+                status_code=401, detail="Bearer token required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        token = header.split(" ", 1)[1].strip()
+        state = get_state()
+        try:
+            label = state.verify_bridge_token(token)
+        finally:
+            state.close()
+        if label is None:
+            raise HTTPException(
+                status_code=401, detail="Invalid or revoked token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return label
+
+    @app.get("/api/status")
+    async def api_status(request: Request):
+        _label = _bridge_auth(request)
+        state = get_state()
+        try:
+            stats = state.get_sync_stats()
+            queue = state.queue_summary()
+        finally:
+            state.close()
+        return {
+            "version": _version(),
+            "client": _label,
+            "sync": {
+                "total_docs": stats.total_docs,
+                "synced": stats.synced,
+                "errors": stats.errors,
+                "pending": stats.pending,
+                "last_sync": stats.last_sync,
+            },
+            "queue": queue,
+        }
+
+    @app.post("/api/push")
+    async def api_push(request: Request):
+        """Enqueue an Obsidian note for reverse-sync to the tablet.
+
+        Payload: ``{"vault_path": "relative/path.md"}``. The vault path
+        must resolve inside the configured vault directory — absolute
+        paths or paths that escape via ``..`` are rejected.
+        """
+        _label = _bridge_auth(request)
+        payload = await request.json()
+        rel = str(payload.get("vault_path", "")).strip()
+        if not rel:
+            raise HTTPException(status_code=400, detail="vault_path required")
+
+        vault_root = Path(config.obsidian.vault_path).expanduser().resolve()
+        target = (vault_root / rel).resolve()
+        if vault_root not in target.parents and target != vault_root:
+            raise HTTPException(
+                status_code=400, detail="vault_path escapes the vault",
+            )
+        if not target.exists() or not target.is_file():
+            raise HTTPException(status_code=404, detail="Note not found")
+
+        state = get_state()
+        try:
+            ok = state.enqueue_reverse_push(str(target))
+        finally:
+            state.close()
+        return {"queued": ok, "vault_path": rel}
+
     @app.get("/templates", response_class=HTMLResponse)
     async def templates_index(request: Request, _=Depends(_auth_check)):
         from src.config import resolve_path
