@@ -32,6 +32,7 @@ remarkable:
   #     label: "reMarkable 2"
   #     vault_subfolder: "rm-2"
   #     sync_folders: ["Notes"]
+  #     ignore_folders: ["Trash", "Archive"]
   devices: []
 
 ocr:
@@ -276,3 +277,7 @@ logging:
   file: "~/.remark-bridge/bridge.log"
   max_size_mb: 50
   backup_count: 5
+  # "text" (default) or "json" — JSON emits one structured record per
+  # line, useful for journald / Loki / any aggregator that parses JSON.
+  # Can also be toggled at runtime via the REMARK_LOG_FORMAT env var.
+  format: "text"
