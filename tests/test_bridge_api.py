@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -75,7 +73,7 @@ class TestBridgeAuth:
         client, token, _ = env
 
         # Revoke via the state DB directly to keep the test hermetic.
-        state = SyncState((tmp_path / "state" / "state.db"))
+        state = SyncState(tmp_path / "state" / "state.db")
         try:
             row_id = state.list_bridge_tokens()[0]["id"]
             state.revoke_bridge_token(row_id)

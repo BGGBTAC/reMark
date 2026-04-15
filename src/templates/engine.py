@@ -447,9 +447,9 @@ def _walk_node(node: ast.AST, values: dict):
         left = _walk_node(node.left, values)
         for op, comparator in zip(node.ops, node.comparators, strict=True):
             right = _walk_node(comparator, values)
-            if isinstance(op, ast.Eq) and not (left == right):
+            if isinstance(op, ast.Eq) and left != right:
                 return False
-            if isinstance(op, ast.NotEq) and not (left != right):
+            if isinstance(op, ast.NotEq) and left == right:
                 return False
             if isinstance(op, ast.In) and left not in (right or []):
                 return False
