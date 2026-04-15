@@ -1,0 +1,96 @@
+name: Wiki screenshots
+
+# Two triggers:
+#   - workflow_dispatch lets us regenerate manually from the Actions UI
+#   - every v* tag refreshes the wiki alongside the PyPI + GHCR publish
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev
+
+      - name: Install project + Playwright
+        run: |
+          pip install -e ".[dev]"
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Seed demo state + vault
+        run: python scripts/seed_demo_data.py --out .demo
+
+      - name: Launch web server in demo mode
+        env:
+          REMARK_CONFIG: ${{ github.workspace }}/.demo/config.yaml
+          REMARK_DEMO_MODE: "1"
+        run: |
+          uvicorn src.web.app:app --host 127.0.0.1 --port 8000 \
+            > .demo/web.log 2>&1 &
+          # Wait for /healthz to flip green (up to 30s)
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/healthz > /dev/null; then
+              echo "Web server up after ${i}s"; break
+            fi
+            sleep 1
+          done
+          curl -sS http://127.0.0.1:8000/healthz
+
+      - name: Capture screenshots
+        run: python scripts/screenshots.py --base http://127.0.0.1:8000 --out screenshots
+
+      - name: Upload screenshots as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiki-screenshots
+          path: screenshots/
+          retention-days: 30
+
+      - name: Publish to wiki
+        env:
+          WIKI_PUSH_TOKEN: ${{ secrets.WIKI_PUSH_TOKEN }}
+          # GITHUB_REF_NAME is already an env var on the runner; pin
+          # it here for clarity and to keep the run: block free of
+          # ${{ ... }} expressions (defence-in-depth against workflow
+          # injection even though the source is trusted).
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -z "$WIKI_PUSH_TOKEN" ]; then
+            echo "WIKI_PUSH_TOKEN secret missing — skipping wiki push"
+            exit 0
+          fi
+          git clone "https://x-access-token:${WIKI_PUSH_TOKEN}@github.com/BGGBTAC/reMark.wiki.git" /tmp/wiki
+          mkdir -p /tmp/wiki/images
+          cp -f screenshots/*.png /tmp/wiki/images/
+          cd /tmp/wiki
+          git config user.email "actions@github.com"
+          git config user.name "reMark bot"
+          git add images/
+          if git diff --cached --quiet; then
+            echo "No screenshot changes to publish"
+            exit 0
+          fi
+          git commit -m "wiki: refresh screenshots (${REF_NAME:-manual})"
+          git push origin HEAD:master
+
+      - name: Dump server log on failure
+        if: failure()
+        run: |
+          echo '--- web.log ---'
+          cat .demo/web.log || true
