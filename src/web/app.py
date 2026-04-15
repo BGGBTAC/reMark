@@ -359,6 +359,145 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
         return RedirectResponse(url="/notes", status_code=303)
 
+    @app.get("/templates", response_class=HTMLResponse)
+    async def templates_index(request: Request, _=Depends(_auth_check)):
+        from src.config import resolve_path
+        from src.templates.engine import TemplateEngine
+
+        engine = TemplateEngine(resolve_path(config.templates.user_templates_dir))
+        templates_list = sorted(
+            engine.list_templates(), key=lambda t: t.name,
+        )
+        # Also expose the raw list of YAML files in the user dir so the
+        # editor can reach files whose YAML failed to parse.
+        user_dir = Path(config.templates.user_templates_dir).expanduser()
+        user_files = (
+            sorted(p.name for p in user_dir.glob("*.yaml"))
+            if user_dir.exists() else []
+        )
+        return templates.TemplateResponse(
+            request, "templates_index.html",
+            {"templates": templates_list, "user_files": user_files},
+        )
+
+    @app.get("/templates/{name}", response_class=HTMLResponse)
+    async def templates_edit(
+        request: Request, name: str, _=Depends(_auth_check),
+    ):
+        import re as _re
+
+        if not _re.fullmatch(r"[A-Za-z0-9_-]+", name):
+            raise HTTPException(status_code=400, detail="Invalid template name")
+
+        user_dir = Path(config.templates.user_templates_dir).expanduser()
+        user_path = user_dir / f"{name}.yaml"
+        builtin_path = Path(__file__).parent.parent / "templates" / "builtin" / f"{name}.yaml"
+
+        if user_path.exists():
+            source = user_path.read_text(encoding="utf-8")
+            origin = "user"
+        elif builtin_path.exists():
+            source = builtin_path.read_text(encoding="utf-8")
+            origin = "builtin"
+        else:
+            source = f"name: {name}\ndescription: \"\"\nfields: []\n"
+            origin = "new"
+
+        return templates.TemplateResponse(
+            request, "templates_edit.html",
+            {
+                "name": name,
+                "source": source,
+                "origin": origin,
+                "saved": request.query_params.get("saved") == "1",
+                "error": None,
+            },
+        )
+
+    @app.post("/templates/{name}")
+    async def templates_save(
+        request: Request, name: str, _=Depends(_auth_check),
+    ):
+        import re as _re
+
+        import yaml as _yaml
+
+        if not _re.fullmatch(r"[A-Za-z0-9_-]+", name):
+            raise HTTPException(status_code=400, detail="Invalid template name")
+
+        form_data = await request.form()
+        source = str(form_data.get("source", ""))
+
+        # Validate before writing — refuse to save a template the engine
+        # would later drop on disk.
+        try:
+            data = _yaml.safe_load(source)
+            if not isinstance(data, dict) or "name" not in data:
+                raise ValueError("Top-level must be a mapping with a 'name' key.")
+            # Parse via engine's own loader to catch field-level issues.
+            from src.templates.engine import _parse_template  # type: ignore[attr-defined]
+            _parse_template(data)
+        except Exception as exc:
+            return templates.TemplateResponse(
+                request, "templates_edit.html",
+                {
+                    "name": name,
+                    "source": source,
+                    "origin": "user",
+                    "saved": False,
+                    "error": str(exc),
+                },
+                status_code=400,
+            )
+
+        user_dir = Path(config.templates.user_templates_dir).expanduser()
+        user_dir.mkdir(parents=True, exist_ok=True)
+        user_path = user_dir / f"{name}.yaml"
+        user_path.write_text(source, encoding="utf-8")
+
+        state = get_state()
+        try:
+            state._log("templates", None, f"saved {name}")
+        finally:
+            state.close()
+
+        return RedirectResponse(
+            url=f"/templates/{name}?saved=1", status_code=303,
+        )
+
+    @app.post("/templates/{name}/preview")
+    async def templates_preview(
+        request: Request, name: str, _=Depends(_auth_check),
+    ):
+        """Render a template preview as PDF bytes for live preview."""
+        import tempfile
+
+        import yaml as _yaml
+
+        form_data = await request.form()
+        source = str(form_data.get("source", ""))
+
+        try:
+            data = _yaml.safe_load(source)
+            if not isinstance(data, dict):
+                raise ValueError("Not a YAML mapping")
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+        # Write to a temp dir, point a new engine at it, render PDF.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp) / f"{name}.yaml"
+            tmp_path.write_text(source, encoding="utf-8")
+            try:
+                from src.templates.engine import TemplateEngine
+                engine = TemplateEngine(tmp)
+                pdf = engine.render_pdf(data["name"], {})
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=400)
+
+        from fastapi.responses import Response
+        return Response(content=pdf, media_type="application/pdf")
+
     @app.get("/queue", response_class=HTMLResponse)
     async def queue_view(
         request: Request,
