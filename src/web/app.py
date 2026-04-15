@@ -187,18 +187,24 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     templates.env.globals["app_name"] = config.web.app_name
 
     def _auth_check(request: Request) -> dict:
-        """Session-first auth, with the legacy HTTP Basic path as a
-        fallback for automation scripts that already rely on it.
+        """Session-first auth with two compat fallbacks.
 
-        Returns the authenticated user dict so downstream handlers
-        can scope their data (per-user vaults, audit metadata, ...).
+        1. Session cookie → return the real user dict.
+        2. If ``web.username`` + ``web.password`` are both set, accept
+           a matching HTTP Basic header (the pre-0.7 automation path).
+        3. Otherwise preserve pre-0.7 open behavior: no auth at all,
+           return an anonymous admin. Admin-only routes still enforce
+           via ``web_auth.require_admin``, which checks for a real
+           session — so ``/users``, ``/audit``, ``/reports`` stay
+           gated behind a login regardless.
         """
         user = web_auth.current_user(request)
         if user is not None:
             return user
 
-        # Legacy Basic auth fallback — same semantics as pre-0.7.
-        if config.web.username and config.web.password:
+        basic_configured = bool(config.web.username and config.web.password)
+
+        if basic_configured:
             header = request.headers.get("authorization", "")
             if header.lower().startswith("basic "):
                 from base64 import b64decode
@@ -214,20 +220,23 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     p.encode(), config.web.password.encode(),
                 )
                 if ok_user and ok_pass:
-                    return {"id": None, "username": config.web.username, "role": "admin"}
-
-        # No session + no Basic match → redirect browsers to /login,
-        # return 401 to JSON/API clients.
-        accept = request.headers.get("accept", "")
-        if "text/html" in accept:
+                    return {
+                        "id": None, "username": config.web.username,
+                        "role": "admin",
+                    }
+            accept = request.headers.get("accept", "")
+            if "text/html" in accept:
+                raise HTTPException(
+                    status_code=status.HTTP_303_SEE_OTHER,
+                    headers={"Location": "/login"},
+                )
             raise HTTPException(
-                status_code=status.HTTP_303_SEE_OTHER,
-                headers={"Location": "/login"},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Auth required",
             )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Auth required",
-        )
+
+        # No auth configured at all — pre-0.7 open behavior.
+        return {"id": None, "username": "anonymous", "role": "admin"}
 
     # -- State accessors --
 

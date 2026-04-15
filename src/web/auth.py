@@ -28,22 +28,27 @@ from src.sync.state import SyncState
 logger = logging.getLogger(__name__)
 
 
-def _context():
-    from passlib.context import CryptContext
-
-    return CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
 def hash_password(plain: str) -> str:
-    return _context().hash(plain)
+    """bcrypt-hash ``plain`` with the current default cost.
+
+    We use the ``bcrypt`` library directly rather than ``passlib`` —
+    passlib 1.7.x probes ``bcrypt.__about__`` which the 4.x series
+    dropped, leaving the backend un-importable. Direct bcrypt is ~10
+    lines of glue and has no moving parts.
+    """
+    import bcrypt
+
+    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    """Constant-time check against a bcrypt hash, False on any error."""
+    import bcrypt
+
     try:
-        return _context().verify(plain, hashed)
-    except Exception:
-        # Defensive — passlib raises on malformed hashes; callers treat
-        # that as "authentication failed" rather than surface the error.
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        # Malformed hash / wrong length → treat as auth failure.
         return False
 
 
