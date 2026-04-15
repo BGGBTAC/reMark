@@ -218,9 +218,18 @@ web:
   host: "127.0.0.1"
   port: 8080
   app_name: "reMark"
-  # Optional HTTP Basic auth — both fields required to enable
+  # Legacy HTTP Basic auth — kept as a fallback for automation
+  # scripts. The main auth path since v0.7 is session-based login
+  # with per-user accounts managed at /users.
   username: ""
   password: ""
+  # Session cookie secret. Generate once with `python -c 'import
+  # secrets; print(secrets.token_urlsafe(32))'`. Empty = a random
+  # per-process value (sessions invalidate on every restart — fine
+  # for dev, bad for prod).
+  session_secret: ""
+  # Set True behind HTTPS so the session cookie is marked Secure.
+  session_https_only: false
   # VAPID keys for Web Push. Generate with `remark-bridge vapid-keys`
   vapid_public_key: ""
   vapid_private_key: ""
@@ -231,6 +240,13 @@ templates:
   enabled: true
   user_templates_dir: "~/.remark-bridge/templates"
   target_folder: "Templates"
+
+reports:
+  # Scheduled Claude-powered summaries pushed to configured output
+  # channels (vault / teams / notion). Individual reports are created
+  # from /reports in the web UI or via `remark-bridge report` on the CLI.
+  enabled: true
+  tick_seconds: 60
 
 search:
   # Semantic search / RAG over synced notes.
