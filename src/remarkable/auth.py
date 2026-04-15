@@ -141,6 +141,7 @@ class AuthManager:
         ``write_text`` and ``chmod`` during which a backup daemon or
         other local user could read the JWT.
         """
+        import contextlib
         import tempfile
 
         parent = self._device_token_path.parent
@@ -154,10 +155,8 @@ class AuthManager:
                 fh.write(token)
             os.replace(tmp_name, self._device_token_path)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_name)
-            except OSError:
-                pass
             raise
         logger.info("Device token saved to %s", self._device_token_path)
 
