@@ -32,8 +32,10 @@ class TestReportsCRUD:
         assert row["enabled"] == 1
 
     def test_unique_name(self, state):
+        import sqlite3
+
         state.create_report("a", "daily 09:00", "p", ["vault"])
-        with pytest.raises(Exception):
+        with pytest.raises(sqlite3.IntegrityError):
             state.create_report("a", "daily 10:00", "p2", ["vault"])
 
     def test_update_partial(self, state):
