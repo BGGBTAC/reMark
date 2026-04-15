@@ -7,7 +7,7 @@ action; for local runs start a demo server yourself first::
 
     python scripts/seed_demo_data.py --out .demo
     REMARK_CONFIG=.demo/config.yaml REMARK_DEMO_MODE=1 \\
-        uvicorn src.web.app:app --host 127.0.0.1 --port 8000 &
+        uvicorn src.web.app:create_app --factory --host 127.0.0.1 --port 8000 &
     python scripts/screenshots.py --base http://127.0.0.1:8000 --out screenshots
 """
 
