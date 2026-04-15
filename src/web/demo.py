@@ -190,13 +190,13 @@ def _seed_bridge_token(state: SyncState) -> None:
 
 
 def _demo_body(title: str, tags: list[str], actions: int, rng: random.Random) -> str:
-    lines = [f"# {title}", "", f"_Demo note seeded for the docs screenshots._", ""]
+    lines = [f"# {title}", "", "_Demo note seeded for the docs screenshots._", ""]
     for _ in range(rng.randint(2, 4)):
         lines.extend([rng.choice(_PARAGRAPHS), ""])
     if actions:
         lines.append("## Action items")
         lines.append("")
-        for i in range(actions):
+        for _ in range(actions):
             lines.append(f"- [ ] {rng.choice(_ACTIONS)}")
         lines.append("")
     return "\n".join(lines)
