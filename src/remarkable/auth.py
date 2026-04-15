@@ -133,11 +133,32 @@ class AuthManager:
         return token
 
     def _save_device_token(self, token: str) -> None:
-        """Save device token to disk with restrictive permissions."""
-        self._device_token_path.parent.mkdir(parents=True, exist_ok=True)
-        self._device_token_path.write_text(token)
-        # chmod 600 — owner read/write only
-        os.chmod(self._device_token_path, 0o600)
+        """Save device token to disk atomically with mode 0600.
+
+        Write to a sibling tempfile opened with ``O_EXCL`` + ``0600``
+        so the file never exists world-readable, then ``os.replace``
+        it over the final path. Avoids the window between
+        ``write_text`` and ``chmod`` during which a backup daemon or
+        other local user could read the JWT.
+        """
+        import tempfile
+
+        parent = self._device_token_path.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=".device_token.", suffix=".tmp", dir=str(parent),
+        )
+        try:
+            os.chmod(tmp_name, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(token)
+            os.replace(tmp_name, self._device_token_path)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
         logger.info("Device token saved to %s", self._device_token_path)
 
     def has_device_token(self) -> bool:

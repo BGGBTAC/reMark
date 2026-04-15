@@ -125,8 +125,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         )
 
     def get_state() -> SyncState:
+        """Return a process-wide SyncState singleton.
+
+        Constructing a ``SyncState`` runs ``_ensure_schema`` which
+        acquires the WAL write lock. On hot routes (``/api/*``, every
+        dashboard refresh) that would stall the async event loop and
+        race the sync daemon for the lock. Cache one connection per
+        process; callers must NOT ``close()`` it.
+        """
         from src.config import resolve_path
-        return SyncState(resolve_path(config.sync.state_db))
+
+        cached = getattr(app.state, "sync_state", None)
+        if cached is None:
+            cached = SyncState(resolve_path(config.sync.state_db))
+            cached._shared = True  # marks close() as a no-op
+            app.state.sync_state = cached
+        return cached
 
     # -- Routes --
 
@@ -212,7 +226,18 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         request: Request, note_path: str, _=Depends(_auth_check),
     ):
         vault = get_vault()
-        full_path = vault.path / note_path
+        vault_root = vault.path.resolve()
+        # ``vault.path / "../../.../x"`` is a valid Path object — the /
+        # operator doesn't normalize. Resolve both sides and require
+        # the result to live under the vault root, otherwise the
+        # endpoint would leak any file the process can read.
+        try:
+            full_path = (vault.path / note_path).resolve()
+        except (OSError, RuntimeError):
+            raise HTTPException(status_code=404, detail="Note not found") from None
+        if full_path != vault_root and vault_root not in full_path.parents:
+            raise HTTPException(status_code=404, detail="Note not found")
+
         result = vault.read_note(full_path)
         if result is None:
             raise HTTPException(status_code=404, detail="Note not found")
@@ -323,12 +348,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 },
             )
         except Exception as e:
+            # Log the real error server-side but never render it into
+            # the HTML — exception messages can carry API keys
+            # (httpx status errors echo the URL; Anthropic errors echo
+            # a token prefix) and users' browsers cache pages.
             logger.warning("ask failed: %s", e)
             return templates.TemplateResponse(
                 request, "ask.html",
                 {
                     "search_enabled": True, "answer": None, "hits": [],
-                    "query": query, "error": str(e),
+                    "query": query,
+                    "error": "Search failed — check server logs for details.",
                 },
             )
 

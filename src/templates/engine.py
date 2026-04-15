@@ -392,6 +392,10 @@ _ALLOWED_NODES: tuple[type[ast.AST], ...] = (
 )
 
 
+MAX_WHEN_EXPR_LEN = 500
+MAX_WHEN_AST_NODES = 200
+
+
 def evaluate_condition(expr: str, values: dict) -> bool:
     """Check a ``when:`` expression against the values mapping.
 
@@ -407,16 +411,33 @@ def evaluate_condition(expr: str, values: dict) -> bool:
 
     Identifier lookups resolve against ``values``; missing keys yield
     ``None``. Unsupported syntax raises ``ConditionError``.
+
+    DoS guards: the expression is capped at ``MAX_WHEN_EXPR_LEN`` chars
+    and ``MAX_WHEN_AST_NODES`` nodes. Both keep ``ast.parse`` and the
+    recursive walker from blowing the stack on adversarial templates.
     """
     if not expr.strip():
         return True
+    if len(expr) > MAX_WHEN_EXPR_LEN:
+        raise ConditionError(
+            f"when: expression too long ({len(expr)} chars, "
+            f"max {MAX_WHEN_EXPR_LEN})"
+        )
 
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:
         raise ConditionError(f"Invalid when expression: {exc}") from exc
+    except (RecursionError, MemoryError) as exc:
+        raise ConditionError("when: expression too deeply nested") from exc
 
-    for node in ast.walk(tree):
+    nodes = list(ast.walk(tree))
+    if len(nodes) > MAX_WHEN_AST_NODES:
+        raise ConditionError(
+            f"when: expression too complex ({len(nodes)} nodes, "
+            f"max {MAX_WHEN_AST_NODES})"
+        )
+    for node in nodes:
         if not isinstance(node, _ALLOWED_NODES):
             raise ConditionError(
                 "Disallowed syntax in when expression: "
@@ -427,6 +448,8 @@ def evaluate_condition(expr: str, values: dict) -> bool:
         return bool(_walk_node(tree.body, values))
     except ConditionError:
         raise
+    except RecursionError as exc:
+        raise ConditionError("when: expression too deeply nested") from exc
     except Exception as exc:
         raise ConditionError(f"Condition evaluation failed: {exc}") from exc
 

@@ -181,31 +181,32 @@ async def _sync_once(config: AppConfig) -> None:
             device.vault_subfolder,
         )
         auth = _get_auth(config, device.id)
-        # Per-device sync_folders / ignore_folders override the top level
-        # only when the device has its own lists set.
-        orig_sync = config.remarkable.sync_folders
-        orig_ignore = config.remarkable.ignore_folders
+        # Per-device sync_folders / ignore_folders override the top
+        # level only when the device has its own lists set. Use a deep
+        # copy so a second concurrent cycle (scheduler vs. manual run)
+        # can't see another device's filters leak through, and so a
+        # mid-flight exception can't leave the shared config mutated.
+        device_config = config.model_copy(deep=True)
         if device.sync_folders:
-            config.remarkable.sync_folders = device.sync_folders
+            device_config.remarkable.sync_folders = device.sync_folders
         if device.ignore_folders:
-            config.remarkable.ignore_folders = device.ignore_folders
-        try:
-            async with RemarkableCloud(auth) as cloud:
-                doc_manager = DocumentManager(cloud, download_dir)
-                report = await engine.sync_once(cloud, doc_manager, ocr_pipeline)
-            engine.state.touch_device(device.id)
-            click.echo(
-                f"  {device.label}: {report.success_count} processed, "
-                f"{report.skipped} skipped, {report.errors} errors "
-                f"({report.duration_ms}ms)"
-            )
-            if report.errors > 0:
-                for r in report.processed:
-                    if not r.success:
-                        click.echo(f"    Error: {r.doc_name} — {r.error}")
-        finally:
-            config.remarkable.sync_folders = orig_sync
-            config.remarkable.ignore_folders = orig_ignore
+            device_config.remarkable.ignore_folders = device.ignore_folders
+        device_engine = SyncEngine(device_config)
+        device_engine.set_device(device.id, device.vault_subfolder)
+
+        async with RemarkableCloud(auth) as cloud:
+            doc_manager = DocumentManager(cloud, download_dir)
+            report = await device_engine.sync_once(cloud, doc_manager, ocr_pipeline)
+        device_engine.state.touch_device(device.id)
+        click.echo(
+            f"  {device.label}: {report.success_count} processed, "
+            f"{report.skipped} skipped, {report.errors} errors "
+            f"({report.duration_ms}ms)"
+        )
+        if report.errors > 0:
+            for r in report.processed:
+                if not r.success:
+                    click.echo(f"    Error: {r.doc_name} — {r.error}")
 
 
 async def _sync_continuous(config: AppConfig) -> None:
