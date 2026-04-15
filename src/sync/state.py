@@ -668,28 +668,43 @@ class SyncState:
     def verify_bridge_token(self, token: str) -> str | None:
         """Return the matching label if ``token`` is active, else ``None``.
 
-        Also bumps ``last_used_at`` when the token matches so the CLI
-        and web UI can surface stale tokens.
+        The comparison deliberately runs in Python with
+        ``secrets.compare_digest`` against every non-revoked token hash,
+        rather than letting SQLite short-circuit a ``WHERE token_hash = ?``
+        byte-by-byte. That closes the timing side channel an attacker
+        could otherwise use to enumerate valid prefixes.
         """
         import hashlib
+        import secrets
 
         if not token:
             return None
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        row = self.conn.execute(
-            "SELECT id, label FROM bridge_tokens "
-            "WHERE token_hash = ? AND revoked = 0",
-            (token_hash,),
-        ).fetchone()
-        if row is None:
+
+        rows = self.conn.execute(
+            "SELECT id, label, token_hash FROM bridge_tokens "
+            "WHERE revoked = 0"
+        ).fetchall()
+
+        match_id: int | None = None
+        match_label: str | None = None
+        for row in rows:
+            if secrets.compare_digest(token_hash, row["token_hash"]):
+                match_id = row["id"]
+                match_label = row["label"]
+                # Don't break — always compare against every row so the
+                # response time is a function of the total number of
+                # tokens, not of which one matched.
+
+        if match_id is None:
             return None
 
         self.conn.execute(
             "UPDATE bridge_tokens SET last_used_at = ? WHERE id = ?",
-            (datetime.now(UTC).isoformat(), row["id"]),
+            (datetime.now(UTC).isoformat(), match_id),
         )
         self.conn.commit()
-        return row["label"]
+        return match_label
 
     def list_bridge_tokens(self) -> list[dict]:
         rows = self.conn.execute(
@@ -898,6 +913,12 @@ class SyncState:
         self.conn.commit()
 
     def close(self) -> None:
+        # The web layer keeps a process-wide SyncState on app.state and
+        # sets ``_shared=True`` on it so route handlers that `finally:
+        # state.close()` don't tear down the shared connection. CLI and
+        # tests leave ``_shared`` unset and behave as before.
+        if getattr(self, "_shared", False):
+            return
         if self._conn:
             self._conn.close()
             self._conn = None
