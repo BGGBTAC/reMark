@@ -112,10 +112,9 @@ class ReportScheduler:
                 await self._fire_due()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ReportScheduler tick failed: %s", exc)
-            try:
+            import contextlib
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._stopped.wait(), timeout=self._tick)
-            except asyncio.TimeoutError:
-                pass
 
     async def _fire_due(self) -> None:
         reports = self._state.due_reports()

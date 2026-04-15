@@ -14,7 +14,6 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -67,8 +66,6 @@ def _version() -> str:
             return "0.0.0+dev"
     except Exception:
         return "unknown"
-
-_security = HTTPBasic(auto_error=False)
 
 
 def _resolve_config() -> AppConfig:
@@ -129,10 +126,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             if scheduler_task is not None:
                 _app.state.report_scheduler.stop()
                 scheduler_task.cancel()
-                try:
+                with contextlib.suppress(_asyncio.CancelledError, Exception):
                     await scheduler_task
-                except (_asyncio.CancelledError, Exception):
-                    pass
 
     app = FastAPI(
         title=config.web.app_name, openapi_url=None, lifespan=lifespan,

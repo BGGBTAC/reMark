@@ -20,8 +20,10 @@ class TestUsersTable:
         assert uid > 0
 
     def test_unique_username(self, state):
+        import sqlite3
+
         state.create_user("alice", "h")
-        with pytest.raises(Exception):
+        with pytest.raises(sqlite3.IntegrityError):
             state.create_user("alice", "h2")
 
     def test_get_user(self, state):
