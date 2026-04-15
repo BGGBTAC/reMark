@@ -12,7 +12,7 @@
 
 Write on your reMarkable. reMark handles the rest — your handwritten notes become structured, searchable Markdown in Obsidian (optionally mirrored to OneNote), complete with tags, summaries, and action items. Push responses back to the tablet, query your vault in natural language, drive Microsoft To Do / Calendar / Teams, and run the whole thing with a web dashboard + mobile PWA.
 
-> **Latest:** v0.5.0 — Web-editable settings for every config key, offline/retry queue, hierarchical auto-tagging, a math/LaTeX example plugin, and Notion workspace mirroring. See [CHANGELOG.md](CHANGELOG.md) for the full history.
+> **Latest:** v0.6.0 — Smart templates with `when:` conditions and inheritance, a web YAML editor, a bearer-token HTTP API, and a companion Obsidian plugin with status bar and one-click push. See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ---
 
@@ -357,6 +357,29 @@ remark-bridge device list
 ```
 
 Single-tablet installs don't need any of this — leaving `remarkable.devices` empty keeps the legacy single-device behaviour unchanged.
+
+### Obsidian companion plugin
+
+Ships at [`contrib/obsidian-plugin/`](contrib/obsidian-plugin/) and publishes to the Obsidian community store under the id `remark-bridge`. It adds a ribbon icon and command to push the active note to your tablet, plus a status-bar widget that polls the bridge every 60 s.
+
+Issue a bearer token on the server, paste it into the plugin's settings, point it at your bridge URL:
+
+```bash
+remark-bridge bridge-token issue --label obsidian
+```
+
+The plugin retries failing requests with exponential back-off and surfaces errors as Obsidian notices. Release and community-store steps live in [`contrib/obsidian-plugin/COMMUNITY_STORE.md`](contrib/obsidian-plugin/COMMUNITY_STORE.md).
+
+### Bridge HTTP API
+
+For custom integrations (Alfred workflow, Raycast extension, another plugin) the same bearer-token auth is exposed via two endpoints:
+
+| Endpoint          | Method | Purpose                                             |
+|-------------------|--------|-----------------------------------------------------|
+| `/api/status`     | GET    | Version, sync stats, queue summary                  |
+| `/api/push`       | POST   | `{vault_path}` — enqueue an Obsidian note for reverse-sync |
+
+Manage tokens with `remark-bridge bridge-token issue|list|revoke`.
 
 ### Notion Integration
 
