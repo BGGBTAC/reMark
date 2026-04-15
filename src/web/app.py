@@ -289,6 +289,72 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             )
         return RedirectResponse(url="/login", status_code=303)
 
+    @app.get("/audit", response_class=HTMLResponse)
+    async def audit_view(
+        request: Request,
+        _=Depends(_auth_check),
+        action: str | None = None,
+        user_id: int | None = None,
+        page: int = 1,
+    ):
+        web_auth.require_admin(request)
+        state = get_state()
+        page = max(page, 1)
+        page_size = 100
+        offset = (page - 1) * page_size
+        rows = state.list_audit(
+            limit=page_size, offset=offset,
+            action=action or None, user_id=user_id,
+        )
+        return templates.TemplateResponse(
+            request, "audit.html",
+            {
+                "rows": rows,
+                "page": page,
+                "has_more": len(rows) == page_size,
+                "filter_action": action or "",
+                "filter_user_id": user_id or "",
+            },
+        )
+
+    @app.get("/audit.csv")
+    async def audit_csv(
+        request: Request,
+        _=Depends(_auth_check),
+        action: str | None = None,
+        user_id: int | None = None,
+        limit: int = 5000,
+    ):
+        """Export the audit log as CSV (admin only)."""
+        import csv
+        import io
+
+        web_auth.require_admin(request)
+        state = get_state()
+        rows = state.list_audit(
+            limit=limit, offset=0,
+            action=action or None, user_id=user_id,
+        )
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([
+            "id", "ts", "user_id", "username", "action", "resource",
+            "method", "status", "ip", "user_agent", "details",
+        ])
+        for r in rows:
+            writer.writerow([r.get(k, "") for k in (
+                "id", "ts", "user_id", "username", "action", "resource",
+                "method", "status", "ip", "user_agent", "details",
+            )])
+        from fastapi.responses import Response
+        return Response(
+            content=buf.getvalue(),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": 'attachment; filename="audit.csv"',
+            },
+        )
+
     @app.get("/users", response_class=HTMLResponse)
     async def users_view(request: Request, _=Depends(_auth_check)):
         admin = web_auth.require_admin(request)
