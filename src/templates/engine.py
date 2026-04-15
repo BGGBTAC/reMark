@@ -39,6 +39,13 @@ class TemplateField:
     type: str = "text"       # "text" | "list" | "date" | "checklist"
     required: bool = False
     hint: str = ""
+    # Optional conditional. When set, the field is only rendered if the
+    # expression evaluates truthy against the values passed to
+    # render_pdf(). Accepted operators: ==, !=, in, not in, and, or,
+    # not. Identifiers resolve against the values dict. See
+    # _eval_condition for the exact grammar.
+    when: str = ""
+    block: str = ""          # named block for templates that `extends`
 
 
 @dataclass
@@ -48,6 +55,8 @@ class Template:
     description: str
     fields: list[TemplateField] = field(default_factory=list)
     title_prefix: str = ""   # prepended to PDF title when pushed
+    extends: str = ""        # name of parent template (optional)
+    blocks: dict[str, list[TemplateField]] = field(default_factory=dict)
 
 
 class TemplateEngine:
@@ -68,6 +77,10 @@ class TemplateEngine:
         if self._user_dir.exists():
             self._load_dir(self._user_dir)
 
+        # Resolve `extends` chains after every template is loaded so
+        # parents are available regardless of file order.
+        self._resolve_inheritance()
+
     def _load_dir(self, directory: Path) -> None:
         for yaml_file in directory.glob("*.yaml"):
             try:
@@ -76,6 +89,68 @@ class TemplateEngine:
                 self._templates[template.name] = template
             except Exception as e:
                 logger.warning("Failed to load template %s: %s", yaml_file.name, e)
+
+    def _resolve_inheritance(self) -> None:
+        """Flatten ``extends`` chains into concrete field lists.
+
+        Each template that references a parent has its parent's fields
+        prepended, with child-defined ``blocks`` replacing parent
+        blocks of the same name. Cycles are detected and abort loading
+        of the offending child.
+        """
+        resolved: dict[str, Template] = {}
+
+        def _resolve(name: str, path: list[str]) -> Template:
+            if name in resolved:
+                return resolved[name]
+            if name in path:
+                raise ValueError(
+                    f"Template cycle: {' -> '.join(path + [name])}"
+                )
+            template = self._templates.get(name)
+            if template is None or not template.extends:
+                resolved[name] = template  # type: ignore[assignment]
+                return template  # type: ignore[return-value]
+
+            parent = _resolve(template.extends, path + [name])
+            if parent is None:
+                logger.warning(
+                    "Template '%s' extends unknown '%s' — keeping as-is",
+                    name, template.extends,
+                )
+                resolved[name] = template
+                return template
+
+            merged_fields: list[TemplateField] = []
+            for pf in parent.fields:
+                # If a child block overrides a parent block, swap in
+                # the child's fields here instead of the parent's.
+                if pf.block and pf.block in template.blocks:
+                    merged_fields.extend(template.blocks[pf.block])
+                else:
+                    merged_fields.append(pf)
+            # Append any child fields that don't belong to a named
+            # block (i.e. additions not overrides).
+            merged_fields.extend(
+                f for f in template.fields if not f.block
+            )
+
+            flattened = Template(
+                name=template.name,
+                description=template.description or parent.description,
+                fields=merged_fields,
+                title_prefix=template.title_prefix or parent.title_prefix,
+                extends=template.extends,
+                blocks=template.blocks,
+            )
+            resolved[name] = flattened
+            return flattened
+
+        for name in list(self._templates):
+            try:
+                self._templates[name] = _resolve(name, [])
+            except ValueError as exc:
+                logger.warning("Skipping template '%s': %s", name, exc)
 
     def list_templates(self) -> list[Template]:
         return list(self._templates.values())
@@ -174,6 +249,8 @@ def _render_template_pdf(template: Template, values: dict) -> bytes:
         story.append(Spacer(1, 4 * mm))
 
     for field_def in template.fields:
+        if field_def.when and not evaluate_condition(field_def.when, values):
+            continue
         story.append(Paragraph(field_def.heading, _TEMPLATE_STYLES["heading"]))
 
         prefilled = values.get(field_def.name)
@@ -256,19 +333,138 @@ def _first_heading(content: str) -> str | None:
 
 
 def _parse_template(data: dict) -> Template:
-    """Build a Template from a parsed YAML dict."""
-    fields = []
-    for f in data.get("fields", []):
-        fields.append(TemplateField(
+    """Build a Template from a parsed YAML dict.
+
+    Supports ``extends:`` for inheritance and ``blocks:`` as a mapping
+    of ``block_name → [field, ...]`` for override-style composition.
+    Fields can carry a ``when:`` expression — see
+    :func:`evaluate_condition` for the accepted grammar.
+    """
+    def _field_from_dict(f: dict, block: str = "") -> TemplateField:
+        return TemplateField(
             name=f["name"],
             heading=f.get("heading", f["name"].title()),
             type=f.get("type", "text"),
             required=f.get("required", False),
             hint=f.get("hint", ""),
-        ))
+            when=f.get("when", ""),
+            block=f.get("block", block),
+        )
+
+    fields = [_field_from_dict(f) for f in data.get("fields", [])]
+
+    blocks: dict[str, list[TemplateField]] = {}
+    for name, entries in (data.get("blocks") or {}).items():
+        blocks[name] = [_field_from_dict(f, block=name) for f in entries]
+
     return Template(
         name=data["name"],
         description=data.get("description", ""),
         fields=fields,
         title_prefix=data.get("title_prefix", ""),
+        extends=data.get("extends", ""),
+        blocks=blocks,
     )
+
+
+# ---------------------------------------------------------------------------
+# when: expression sandbox
+# ---------------------------------------------------------------------------
+
+import ast  # noqa: E402  (imported here to keep sandbox code co-located)
+
+
+class ConditionError(ValueError):
+    """Raised when a ``when:`` expression contains unsafe syntax."""
+
+
+# The only AST nodes permitted inside a ``when:`` expression. Anything
+# else (function calls, attribute access, imports, comprehensions, ...)
+# is rejected before evaluation. Keeps the sandbox tiny and auditable.
+_ALLOWED_NODES: tuple[type[ast.AST], ...] = (
+    ast.Expression,
+    ast.BoolOp, ast.And, ast.Or,
+    ast.UnaryOp, ast.Not,
+    ast.Compare, ast.Eq, ast.NotEq, ast.In, ast.NotIn,
+    ast.Constant,
+    ast.Name, ast.Load,
+    ast.List, ast.Tuple, ast.Set,
+)
+
+
+def evaluate_condition(expr: str, values: dict) -> bool:
+    """Check a ``when:`` expression against the values mapping.
+
+    Grammar (intentionally narrow — no function calls, no attribute
+    access, no subscripting):
+
+        expr    := bool_or
+        bool_or := bool_and ('or' bool_and)*
+        bool_and:= not_expr ('and' not_expr)*
+        not_expr:= 'not' cmp | cmp
+        cmp     := primary (('=='|'!='|'in'|'not in') primary)*
+        primary := IDENT | STRING | NUMBER | '[' ... ']' | '(' expr ')'
+
+    Identifier lookups resolve against ``values``; missing keys yield
+    ``None``. Unsupported syntax raises ``ConditionError``.
+    """
+    if not expr.strip():
+        return True
+
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as exc:
+        raise ConditionError(f"Invalid when expression: {exc}") from exc
+
+    for node in ast.walk(tree):
+        if not isinstance(node, _ALLOWED_NODES):
+            raise ConditionError(
+                "Disallowed syntax in when expression: "
+                f"{type(node).__name__}"
+            )
+
+    try:
+        return bool(_walk_node(tree.body, values))
+    except ConditionError:
+        raise
+    except Exception as exc:
+        raise ConditionError(f"Condition evaluation failed: {exc}") from exc
+
+
+def _walk_node(node: ast.AST, values: dict):
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        return values.get(node.id)
+    if isinstance(node, ast.BoolOp):
+        items = [_walk_node(v, values) for v in node.values]
+        if isinstance(node.op, ast.And):
+            return all(items)
+        return any(items)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return not _walk_node(node.operand, values)
+    if isinstance(node, ast.Compare):
+        left = _walk_node(node.left, values)
+        for op, comparator in zip(node.ops, node.comparators, strict=True):
+            right = _walk_node(comparator, values)
+            if isinstance(op, ast.Eq) and not (left == right):
+                return False
+            if isinstance(op, ast.NotEq) and not (left != right):
+                return False
+            if isinstance(op, ast.In) and left not in (right or []):
+                return False
+            if isinstance(op, ast.NotIn) and left in (right or []):
+                return False
+            left = right
+        return True
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return [_walk_node(e, values) for e in node.elts]
+    raise ConditionError(
+        f"Unsupported node in when expression: {type(node).__name__}"
+    )
+
+
+__all__ = [
+    "Template", "TemplateField", "TemplateEngine",
+    "evaluate_condition", "ConditionError",
+]
