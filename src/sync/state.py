@@ -871,9 +871,10 @@ class SyncState:
     def mark_queue_failed(self, queue_id: int, error: str) -> None:
         """Bump attempts, back off, mark ``failed`` when the cap is hit.
 
-        Back-off follows an exponential schedule (1 → 5 → 25 minutes),
-        capped at 6 hours. That's short enough to recover from a
-        Cloud-side blip and long enough not to thrash the state DB.
+        Back-off is ``5 ** attempts`` minutes, so the first retry waits
+        5 min, the second 25 min, the third ~2 h, capped at 6 h. Short
+        enough to recover from a Cloud-side blip, long enough not to
+        thrash the state DB.
         """
         row = self.conn.execute(
             "SELECT attempts, max_attempts FROM sync_queue WHERE id=?",
