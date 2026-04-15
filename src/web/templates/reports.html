@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Reports — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-semibold mb-6">Scheduled reports</h1>
+
+{% if saved %}
+<div class="mb-4 p-3 rounded-md bg-green-50 border border-green-200 text-green-800 text-sm">Saved.</div>
+{% endif %}
+{% if error %}
+<div class="mb-4 p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-sm">{{ error }}</div>
+{% endif %}
+
+{% if reports %}
+<div class="bg-white rounded-lg shadow-sm overflow-hidden mb-8">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b">
+      <tr>
+        <th class="text-left p-3">Name</th>
+        <th class="text-left p-3">Schedule</th>
+        <th class="text-left p-3">Channels</th>
+        <th class="text-left p-3">Status</th>
+        <th class="text-left p-3">Next run</th>
+        <th class="text-left p-3"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in reports %}
+      <tr class="border-b last:border-0">
+        <td class="p-3">
+          <div class="font-medium">{{ r.name }}</div>
+          <div class="text-xs text-gray-500 font-mono">{{ r.prompt[:100] }}{% if r.prompt|length > 100 %}…{% endif %}</div>
+        </td>
+        <td class="p-3 font-mono text-xs">{{ r.schedule }}</td>
+        <td class="p-3 text-xs">{{ r.channels }}</td>
+        <td class="p-3">
+          {% if r.enabled %}
+            <span class="px-2 py-0.5 rounded bg-green-100 text-green-800 text-xs">enabled</span>
+          {% else %}
+            <span class="px-2 py-0.5 rounded bg-gray-200 text-gray-600 text-xs">disabled</span>
+          {% endif %}
+          {% if r.last_status == "ok" %}
+            <span class="ml-1 text-green-700 text-xs">last ok</span>
+          {% elif r.last_status == "partial" %}
+            <span class="ml-1 text-amber-700 text-xs" title="{{ r.last_error or '' }}">last partial</span>
+          {% elif r.last_status == "error" %}
+            <span class="ml-1 text-red-700 text-xs" title="{{ r.last_error or '' }}">last error</span>
+          {% endif %}
+        </td>
+        <td class="p-3 text-xs text-gray-500">{{ r.next_run_at or '—' }}</td>
+        <td class="p-3 text-right">
+          <div class="flex flex-wrap gap-1 justify-end">
+            <form method="post" action="/reports/{{ r.id }}/run" class="inline">
+              <button class="text-xs px-2 py-0.5 rounded bg-white border border-gray-300 hover:bg-gray-50">Run now</button>
+            </form>
+            <form method="post" action="/reports/{{ r.id }}/toggle" class="inline">
+              <button class="text-xs px-2 py-0.5 rounded bg-white border border-gray-300 hover:bg-gray-50">
+                {% if r.enabled %}disable{% else %}enable{% endif %}
+              </button>
+            </form>
+            <form method="post" action="/reports/{{ r.id }}/delete" class="inline"
+                  onsubmit="return confirm('Delete report {{ r.name }}?');">
+              <button class="text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<h2 class="text-lg font-semibold mb-2">New report</h2>
+<form method="post" action="/reports/create" class="bg-white rounded-lg shadow-sm p-4 space-y-3">
+  <div class="grid md:grid-cols-2 gap-3">
+    <div>
+      <label class="block text-xs text-gray-700 mb-1">Name</label>
+      <input type="text" name="name" required class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-700 mb-1">Schedule</label>
+      <input type="text" name="schedule" required placeholder="every 1d  |  daily 09:00  |  weekly mon 09:00"
+             class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm font-mono">
+      <p class="text-xs text-gray-500 mt-1">
+        Accepted: <code>every &lt;N&gt;m|h|d</code>, <code>daily HH:MM</code>, <code>weekly DAY HH:MM</code>
+      </p>
+    </div>
+  </div>
+  <div>
+    <label class="block text-xs text-gray-700 mb-1">Prompt</label>
+    <textarea name="prompt" rows="4" required
+              placeholder="e.g. Summarize the week's meetings and open action items across all vaults."
+              class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm font-mono"></textarea>
+  </div>
+  <div>
+    <label class="block text-xs text-gray-700 mb-1">Channels</label>
+    <div class="flex gap-4 text-sm">
+      <label><input type="checkbox" name="channels" value="vault" checked> Vault</label>
+      <label><input type="checkbox" name="channels" value="teams"> Teams</label>
+      <label><input type="checkbox" name="channels" value="notion"> Notion</label>
+    </div>
+  </div>
+  <label class="block text-sm">
+    <input type="checkbox" name="enabled" checked> Enabled
+  </label>
+  <button type="submit" class="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800">Create</button>
+</form>
+{% endblock %}

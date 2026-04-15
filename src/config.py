@@ -256,6 +256,15 @@ class TemplatesConfig(BaseModel):
     target_folder: str = "Templates"
 
 
+class ReportsConfig(BaseModel):
+    """Scheduled-reports configuration (v0.7+)."""
+    enabled: bool = True
+    # Scheduler tick — how often the background loop polls for due
+    # reports. 60s is the right trade-off: fine-grained enough for
+    # "every 1m" schedules, cheap enough to not show up in CPU graphs.
+    tick_seconds: int = 60
+
+
 class LoggingConfig(BaseModel):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     file: str = "~/.remark-bridge/bridge.log"
@@ -278,6 +287,7 @@ class AppConfig(BaseModel):
     plugins: PluginConfig = Field(default_factory=PluginConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     templates: TemplatesConfig = Field(default_factory=TemplatesConfig)
+    reports: ReportsConfig = Field(default_factory=ReportsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 
