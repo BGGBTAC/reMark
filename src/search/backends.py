@@ -18,6 +18,7 @@ DEFAULT_MODELS = {
     "voyage": "voyage-3.5",
     "openai": "text-embedding-3-small",
     "local": "all-MiniLM-L6-v2",
+    "ollama": "nomic-embed-text",
 }
 
 
@@ -170,6 +171,66 @@ class LocalBackend(EmbeddingBackend):
             raise EmbeddingError(f"Local embedding failed: {e}") from e
 
 
+# Known Ollama embedding models and their output dimensions.
+# Extend as new models become common; unknown models default to 768.
+OLLAMA_MODEL_DIMENSIONS = {
+    "nomic-embed-text": 768,
+    "mxbai-embed-large": 1024,
+    "snowflake-arctic-embed": 1024,
+    "all-minilm": 384,
+}
+
+
+class OllamaEmbeddingBackend(EmbeddingBackend):
+    """Embeddings via a local Ollama server (/api/embeddings).
+
+    Ollama's endpoint accepts one prompt per call, so ``embed()`` loops.
+    The default dimension is pulled from a known-model table; unknown
+    models fall back to 768 (the most common embedding size today).
+    """
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        model: str = "nomic-embed-text",
+        http=None,
+        max_batch_size: int = 32,
+    ):
+        self._base_url = base_url.rstrip("/")
+        self._model = model
+        self._http = http
+        self._max_batch = max_batch_size
+        self._dimension = OLLAMA_MODEL_DIMENSIONS.get(model, 768)
+
+    @property
+    def name(self) -> str:
+        return "ollama"
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    @property
+    def max_batch_size(self) -> int:
+        return self._max_batch
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        if self._http is None:
+            import httpx
+            self._http = httpx.AsyncClient(timeout=120.0)
+        results: list[list[float]] = []
+        for text in texts:
+            resp = await self._http.post(
+                f"{self._base_url}/api/embeddings",
+                json={"model": self._model, "prompt": text},
+            )
+            resp.raise_for_status()
+            results.append(resp.json().get("embedding", []))
+        return results
+
+
 def build_backend(
     backend_name: str,
     model: str = "",
@@ -196,5 +257,11 @@ def build_backend(
 
     if backend_name == "local":
         return LocalBackend(model=model)
+
+    if backend_name == "ollama":
+        return OllamaEmbeddingBackend(
+            base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+            model=model or DEFAULT_MODELS["ollama"],
+        )
 
     raise EmbeddingError(f"Unknown embedding backend: {backend_name}")
