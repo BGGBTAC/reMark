@@ -297,3 +297,15 @@ logging:
   # line, useful for journald / Loki / any aggregator that parses JSON.
   # Can also be toggled at runtime via the REMARK_LOG_FORMAT env var.
   format: "text"
+
+# Pluggable LLM backend. Default is Anthropic (cloud). Set provider: ollama
+# for a fully offline stack — requires `ollama serve` running on the host
+# and models pulled (see docs/OLLAMA.md).
+llm:
+  provider: anthropic   # anthropic | ollama
+  ollama:
+    base_url: http://localhost:11434
+    text_model: llama3.1
+    vision_model: llava
+    embedding_model: nomic-embed-text
+    timeout_seconds: 120
