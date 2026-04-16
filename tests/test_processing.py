@@ -389,8 +389,8 @@ class TestNoteSummarizer:
             "key_points": ["Revenue target set", "Hiring plan approved"],
             "topics": ["okrs", "hiring"],
         })
-        client = mock_anthropic_response(response)
-        summarizer = NoteSummarizer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text=response)
+        summarizer = NoteSummarizer(llm, "claude-sonnet-4-20250514")
 
         result = await summarizer.summarize("Long meeting notes...", "Q2 Planning")
 
@@ -401,11 +401,22 @@ class TestNoteSummarizer:
 
     @pytest.mark.asyncio
     async def test_summarize_empty_text(self):
-        client = mock_anthropic_response("")
-        summarizer = NoteSummarizer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="")
+        summarizer = NoteSummarizer(llm, "claude-sonnet-4-20250514")
 
         result = await summarizer.summarize("", "Empty Note")
         assert "Empty" in result.one_line
+
+    @pytest.mark.asyncio
+    async def test_summarizer_uses_llm_client(self):
+        llm = _StubLLM(text="short summary")
+        summarizer = NoteSummarizer(llm, "llama3.1")
+
+        result = await summarizer.summarize("some note content", "Test")
+
+        assert result.one_line == "short summary"
+        assert llm.calls
+        assert llm.calls[0][2] == "llama3.1"  # model forwarded correctly
 
 
 class TestFallbackSummary:
