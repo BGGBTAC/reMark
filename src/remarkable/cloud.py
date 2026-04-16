@@ -242,7 +242,9 @@ class RemarkableCloud:
 
         logger.info(
             "Uploaded %s as %s (parent: %s)",
-            source_path.name, doc_id[:8], parent_folder or "root",
+            source_path.name,
+            doc_id[:8],
+            parent_folder or "root",
         )
         return doc_id
 
@@ -289,41 +291,50 @@ class RemarkableCloud:
         for attempt in range(MAX_RETRIES):
             try:
                 resp = await self.client.request(
-                    method, url, headers=headers, json=json, content=content,
+                    method,
+                    url,
+                    headers=headers,
+                    json=json,
+                    content=content,
                 )
 
                 if resp.status_code < 400:
                     return resp
 
                 if resp.status_code == 429 or resp.status_code >= 500:
-                    wait = RETRY_BACKOFF_BASE ** attempt
+                    wait = RETRY_BACKOFF_BASE**attempt
                     logger.warning(
                         "Request %s %s returned %d, retrying in %ds (attempt %d/%d)",
-                        method, _redact_url(url), resp.status_code, wait, attempt + 1, MAX_RETRIES,
+                        method,
+                        _redact_url(url),
+                        resp.status_code,
+                        wait,
+                        attempt + 1,
+                        MAX_RETRIES,
                     )
                     await asyncio.sleep(wait)
                     continue
 
                 # 4xx (not 429) — don't retry
-                raise CloudError(
-                    f"{method} {_redact_url(url)} failed: HTTP {resp.status_code}"
-                )
+                raise CloudError(f"{method} {_redact_url(url)} failed: HTTP {resp.status_code}")
 
             except httpx.TransportError as e:
                 last_error = e
-                wait = RETRY_BACKOFF_BASE ** attempt
+                wait = RETRY_BACKOFF_BASE**attempt
                 logger.warning(
                     "Transport error on %s %s: %s, retrying in %ds",
-                    method, _redact_url(url), e, wait,
+                    method,
+                    _redact_url(url),
+                    e,
+                    wait,
                 )
                 import asyncio
+
                 await asyncio.sleep(wait)
 
         raise CloudError(f"Request failed after {MAX_RETRIES} retries: {last_error}")
 
-    async def _fetch_blob(
-        self, storage: str, blob_hash: str, headers: dict[str, str]
-    ) -> bytes:
+    async def _fetch_blob(self, storage: str, blob_hash: str, headers: dict[str, str]) -> bytes:
         """Fetch a single blob by its hash."""
         url = f"{storage}/sync/v2/signed-urls/downloads"
         payload = {"relative_path": blob_hash, "http_method": "GET"}
@@ -336,6 +347,46 @@ class RemarkableCloud:
 
         blob_resp = await self._request("GET", signed_url)
         return blob_resp.content
+
+    async def _fetch_blob_streaming(
+        self,
+        storage: str,
+        blob_hash: str,
+        headers: dict[str, str],
+        threshold_bytes: int,
+        temp_dir: str | Path,
+    ) -> tuple[str | None, bytes | None]:
+        """Streaming variant of _fetch_blob for large blobs.
+
+        Returns (None, bytes) when the blob fits under the threshold, or
+        (temp_path, None) when it spilled to disk. Callers that receive a
+        temp_path are responsible for unlinking it after use.
+
+        Existing callers continue to use _fetch_blob; this method exists so
+        the engine can opt in to bounded-memory downloads for large notebooks.
+        Downstream migration can happen incrementally in follow-up tasks.
+        """
+        from src.remarkable.streaming import download_blob as _dl
+
+        url = f"{storage}/sync/v2/signed-urls/downloads"
+        payload = {"relative_path": blob_hash, "http_method": "GET"}
+        resp = await self._request("PUT", url, headers=headers, json=payload)
+        url_data = resp.json()
+        signed_url = url_data.get("url", "")
+
+        if not signed_url:
+            raise CloudError(f"No download URL for blob {blob_hash[:12]}")
+
+        def _streamer(method: str, url: str):  # noqa: ANN202
+            return self._client.stream(method, url)
+
+        return await _dl(
+            _streamer,
+            method="GET",
+            url=signed_url,
+            threshold_bytes=threshold_bytes,
+            temp_dir=temp_dir,
+        )
 
     def _parse_root_index(self, data: bytes) -> SyncRoot:
         """Parse the sync 1.5 root index format.
@@ -351,6 +402,7 @@ class RemarkableCloud:
 
         # First line is the schema version / generation
         import contextlib
+
         with contextlib.suppress(ValueError):
             root.schema_version = int(lines[0])
 
@@ -359,14 +411,16 @@ class RemarkableCloud:
                 continue
             parts = line.split(":")
             if len(parts) >= 3:
-                root.files.append({
-                    "hash": parts[0],
-                    "type": parts[1],
-                    "id": parts[2],
-                    "subfiles": int(parts[3]) if len(parts) > 3 else 0,
-                    "size": int(parts[4]) if len(parts) > 4 else 0,
-                    "modified": parts[5] if len(parts) > 5 else "",
-                })
+                root.files.append(
+                    {
+                        "hash": parts[0],
+                        "type": parts[1],
+                        "id": parts[2],
+                        "subfiles": int(parts[3]) if len(parts) > 3 else 0,
+                        "size": int(parts[4]) if len(parts) > 4 else 0,
+                        "modified": parts[5] if len(parts) > 5 else "",
+                    }
+                )
 
         return root
 

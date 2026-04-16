@@ -30,42 +30,93 @@ def is_enabled() -> bool:
 # ---------------------------------------------------------------------------
 
 _DEVICES = [
-    ("pro",     "Paper Pro",       "rm-pro"),
-    ("rm2",     "reMarkable 2",    "rm-2"),
-    ("work",    "Office tablet",   "work"),
+    ("pro", "Paper Pro", "rm-pro"),
+    ("rm2", "reMarkable 2", "rm-2"),
+    ("work", "Office tablet", "work"),
 ]
 
 _NOTES = [
-    ("meeting-2026-03-12.md",        "Q2 kickoff standup",
-     "Meetings",    ["project/remark-bridge", "meeting/standup"], 4),
-    ("architecture-review.md",        "Architecture review — v0.7",
-     "Meetings",    ["project/remark-bridge", "meeting/review"], 2),
-    ("reading-deep-work.md",          "Deep Work — ch. 3 notes",
-     "Reading",     ["reading/books", "topic/focus"],            0),
-    ("idea-math-ocr.md",              "Idea — math OCR plugin",
-     "Ideas",       ["project/remark-bridge", "topic/ocr"],      3),
-    ("journal-2026-03-15.md",         "Journal — Mar 15",
-     "Journal",     ["journal/daily"],                            0),
-    ("onboarding-new-teammate.md",    "Onboarding plan — Lena",
-     "Projects",    ["project/team", "meeting/1-on-1"],          5),
-    ("vps-migration.md",              "VPS migration checklist",
-     "Projects",    ["project/ops", "topic/infra"],              7),
-    ("retro-q1.md",                   "Q1 retrospective",
-     "Meetings",    ["meeting/retro"],                            2),
-    ("interview-candidate-a.md",      "Interview — Candidate A",
-     "Projects",    ["project/hiring", "meeting/1-on-1"],        1),
-    ("template-push-draft.md",        "Draft — weekly-review template",
-     "Templates",   ["topic/templates"],                          0),
-    ("reading-pragmatic.md",          "Pragmatic Programmer — notes",
-     "Reading",     ["reading/books", "topic/craft"],             0),
-    ("sync-edge-cases.md",            "Edge cases worth regression tests",
-     "Projects",    ["project/remark-bridge", "topic/testing"],  6),
-    ("personal-goals-2026.md",        "2026 personal goals",
-     "Journal",     ["journal/goals"],                            3),
-    ("api-design-principles.md",     "API design principles — my shortlist",
-     "Reference",   ["reference/api"],                            0),
-    ("meeting-customer-acme.md",      "ACME customer sync",
-     "Meetings",    ["project/customers", "meeting/external"],   4),
+    (
+        "meeting-2026-03-12.md",
+        "Q2 kickoff standup",
+        "Meetings",
+        ["project/remark-bridge", "meeting/standup"],
+        4,
+    ),
+    (
+        "architecture-review.md",
+        "Architecture review — v0.7",
+        "Meetings",
+        ["project/remark-bridge", "meeting/review"],
+        2,
+    ),
+    (
+        "reading-deep-work.md",
+        "Deep Work — ch. 3 notes",
+        "Reading",
+        ["reading/books", "topic/focus"],
+        0,
+    ),
+    (
+        "idea-math-ocr.md",
+        "Idea — math OCR plugin",
+        "Ideas",
+        ["project/remark-bridge", "topic/ocr"],
+        3,
+    ),
+    ("journal-2026-03-15.md", "Journal — Mar 15", "Journal", ["journal/daily"], 0),
+    (
+        "onboarding-new-teammate.md",
+        "Onboarding plan — Lena",
+        "Projects",
+        ["project/team", "meeting/1-on-1"],
+        5,
+    ),
+    ("vps-migration.md", "VPS migration checklist", "Projects", ["project/ops", "topic/infra"], 7),
+    ("retro-q1.md", "Q1 retrospective", "Meetings", ["meeting/retro"], 2),
+    (
+        "interview-candidate-a.md",
+        "Interview — Candidate A",
+        "Projects",
+        ["project/hiring", "meeting/1-on-1"],
+        1,
+    ),
+    (
+        "template-push-draft.md",
+        "Draft — weekly-review template",
+        "Templates",
+        ["topic/templates"],
+        0,
+    ),
+    (
+        "reading-pragmatic.md",
+        "Pragmatic Programmer — notes",
+        "Reading",
+        ["reading/books", "topic/craft"],
+        0,
+    ),
+    (
+        "sync-edge-cases.md",
+        "Edge cases worth regression tests",
+        "Projects",
+        ["project/remark-bridge", "topic/testing"],
+        6,
+    ),
+    ("personal-goals-2026.md", "2026 personal goals", "Journal", ["journal/goals"], 3),
+    (
+        "api-design-principles.md",
+        "API design principles — my shortlist",
+        "Reference",
+        ["reference/api"],
+        0,
+    ),
+    (
+        "meeting-customer-acme.md",
+        "ACME customer sync",
+        "Meetings",
+        ["project/customers", "meeting/external"],
+        4,
+    ),
 ]
 
 
@@ -101,8 +152,7 @@ def seed(config: AppConfig) -> None:
             """INSERT INTO plugin_state
                  (name, enabled, config, installed_at, last_used_at)
                VALUES (?, 1, '', ?, ?)""",
-            ("demo_seeded", datetime.now(UTC).isoformat(),
-             datetime.now(UTC).isoformat()),
+            ("demo_seeded", datetime.now(UTC).isoformat(), datetime.now(UTC).isoformat()),
         )
         state.conn.commit()
     finally:
@@ -174,14 +224,18 @@ def _seed_queue(state: SyncState) -> None:
 def _seed_api_usage(state: SyncState) -> None:
     providers = [
         ("anthropic", "claude-sonnet-4-20250514", "structure", 18500, 1200, 0.21),
-        ("anthropic", "claude-sonnet-4-20250514", "tagger",     4800,  350, 0.06),
-        ("anthropic", "claude-sonnet-4-20250514", "summary",    6200,  800, 0.08),
-        ("voyage",    "voyage-3.5",               "embed",     12400,    0, 0.02),
+        ("anthropic", "claude-sonnet-4-20250514", "tagger", 4800, 350, 0.06),
+        ("anthropic", "claude-sonnet-4-20250514", "summary", 6200, 800, 0.08),
+        ("voyage", "voyage-3.5", "embed", 12400, 0, 0.02),
     ]
     for provider, model, op, it, ot, cost in providers:
         state.log_api_usage(
-            provider=provider, model=model, operation=op,
-            input_tokens=it, output_tokens=ot, cost_usd=cost,
+            provider=provider,
+            model=model,
+            operation=op,
+            input_tokens=it,
+            output_tokens=ot,
+            cost_usd=cost,
         )
 
 

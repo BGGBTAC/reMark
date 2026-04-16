@@ -21,6 +21,7 @@ from src.processing.actions import ActionItem
 # MicrosoftAuth
 # =====================
 
+
 class TestMicrosoftAuth:
     def test_missing_client_id_raises(self, tmp_path):
         with pytest.raises(MicrosoftAuthError, match="client_id"):
@@ -55,6 +56,7 @@ class TestMicrosoftAuth:
 # =====================
 # TodoClient helpers
 # =====================
+
 
 class TestPriorityMapping:
     def test_high_maps_to_high(self):
@@ -95,16 +97,19 @@ class TestParseDeadline:
 # TodoClient
 # =====================
 
+
 class TestTodoClient:
     @pytest.mark.asyncio
     async def test_get_or_create_list_existing(self):
         graph = MagicMock()
-        graph.get = AsyncMock(return_value={
-            "value": [
-                {"id": "list-abc", "displayName": "reMark"},
-                {"id": "list-xyz", "displayName": "Other"},
-            ],
-        })
+        graph.get = AsyncMock(
+            return_value={
+                "value": [
+                    {"id": "list-abc", "displayName": "reMark"},
+                    {"id": "list-xyz", "displayName": "Other"},
+                ],
+            }
+        )
 
         client = TodoClient(graph, list_name="reMark")
         list_id = await client.get_or_create_list()
@@ -175,10 +180,12 @@ class TestTodoClient:
     @pytest.mark.asyncio
     async def test_get_task_success(self):
         graph = MagicMock()
-        graph.get = AsyncMock(side_effect=[
-            {"value": [{"id": "list-1", "displayName": "reMark"}]},
-            {"id": "task-1", "title": "Do X", "status": "completed"},
-        ])
+        graph.get = AsyncMock(
+            side_effect=[
+                {"value": [{"id": "list-1", "displayName": "reMark"}]},
+                {"id": "task-1", "title": "Do X", "status": "completed"},
+            ]
+        )
 
         client = TodoClient(graph, list_name="reMark")
         task = await client.get_task("task-1")
@@ -190,12 +197,14 @@ class TestTodoClient:
     @pytest.mark.asyncio
     async def test_list_completed_since(self):
         graph = MagicMock()
-        graph.get = AsyncMock(side_effect=[
-            {"value": [{"id": "list-1", "displayName": "reMark"}]},
-            {"id": "t1", "title": "A", "status": "completed"},
-            {"id": "t2", "title": "B", "status": "notStarted"},
-            {"id": "t3", "title": "C", "status": "completed"},
-        ])
+        graph.get = AsyncMock(
+            side_effect=[
+                {"value": [{"id": "list-1", "displayName": "reMark"}]},
+                {"id": "t1", "title": "A", "status": "completed"},
+                {"id": "t2", "title": "B", "status": "notStarted"},
+                {"id": "t3", "title": "C", "status": "completed"},
+            ]
+        )
 
         client = TodoClient(graph, list_name="reMark")
         completed = await client.list_completed_since(["t1", "t2", "t3"])
@@ -218,6 +227,7 @@ class TestTodoTask:
 # =====================
 # CalendarClient
 # =====================
+
 
 class TestCalendarClient:
     @pytest.mark.asyncio
@@ -283,6 +293,7 @@ class TestCalendarClient:
 # MicrosoftService
 # =====================
 
+
 class TestMicrosoftService:
     def test_disabled_when_no_client_id(self):
         config = MicrosoftConfig(enabled=True, client_id="")
@@ -315,7 +326,8 @@ class TestMicrosoftService:
         service = MicrosoftService(config)
 
         result = await service.sync_actions(
-            [ActionItem(task="X")], source_note="N",
+            [ActionItem(task="X")],
+            source_note="N",
         )
         assert result.tasks_created == []
         assert result.events_created == []
@@ -330,7 +342,8 @@ class TestMicrosoftService:
         service = MicrosoftService(config)
 
         result = await service.sync_actions(
-            [ActionItem(task="X")], source_note="N",
+            [ActionItem(task="X")],
+            source_note="N",
         )
         # No cached token -> skipped, no errors
         assert result.tasks_created == []
@@ -354,12 +367,15 @@ class TestMicrosoftService:
         mock_graph_ctx.__aenter__ = AsyncMock(return_value=mock_graph_ctx)
         mock_graph_ctx.__aexit__ = AsyncMock(return_value=False)
 
-        with patch(
-            "src.integrations.microsoft.service.GraphClient",
-            return_value=mock_graph_ctx,
-        ), patch(
-            "src.integrations.microsoft.service.TodoClient",
-        ) as mock_todo_cls:
+        with (
+            patch(
+                "src.integrations.microsoft.service.GraphClient",
+                return_value=mock_graph_ctx,
+            ),
+            patch(
+                "src.integrations.microsoft.service.TodoClient",
+            ) as mock_todo_cls,
+        ):
             mock_todo = AsyncMock()
             mock_todo_cls.return_value = mock_todo
 
@@ -376,6 +392,7 @@ class TestMicrosoftService:
 # =====================
 # State external_links
 # =====================
+
 
 class TestExternalLinks:
     def test_record_and_retrieve(self, tmp_path):

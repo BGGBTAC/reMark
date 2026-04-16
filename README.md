@@ -12,7 +12,7 @@
 
 Write on your reMarkable. reMark handles the rest — your handwritten notes become structured, searchable Markdown in Obsidian (optionally mirrored to OneNote), complete with tags, summaries, and action items. Push responses back to the tablet, query your vault in natural language, drive Microsoft To Do / Calendar / Teams, and run the whole thing with a web dashboard + mobile PWA.
 
-> **Latest:** v0.7.1 — Patch: passlib→bcrypt swap, pre-0.7 no-auth compat restored, eager SyncState init fixes ISE on cold start, cross-thread SQLite fix. See [CHANGELOG.md](CHANGELOG.md) for the full history.
+> **Latest:** v0.8.0 — Offline & Scale: provider-agnostic LLM layer (Ollama or Anthropic), streaming downloads, batch embeddings, shared httpx pool, Bridge API v2 (note status, preview, vault search). Obsidian plugin now in the Community Store. See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 <p align="center">
   <a href="https://github.com/BGGBTAC/reMark/wiki/Web-Dashboard">
@@ -58,6 +58,23 @@ Write on your reMarkable. reMark handles the rest — your handwritten notes bec
 
 ### Extensibility
 - **Plugin system** _(v0.3)_ — custom action extractors, OCR backends, note post-processors, sync hooks. Load from a local directory or pip-installed packages.
+
+### Offline-first with Ollama
+
+Set `llm.provider: ollama` (or flip it from `/settings/llm`) and
+every LLM call — structuring, tagging, summaries, actions,
+reports, OCR VLM, embeddings — goes to a local Ollama server
+instead of Anthropic. See [`docs/OLLAMA.md`](docs/OLLAMA.md).
+
+### Performance
+
+- **Streaming downloads**: blobs above 5 MB spill to disk so RSS
+  stays flat regardless of notebook size.
+- **Batch embeddings**: reindexing a 1000-chunk vault is 3-5×
+  faster than 0.7 thanks to cross-document batching.
+- **Shared httpx pool**: auth + webhook dispatch reuse one
+  keep-alive client.
+- `remark-bridge bench` — measure your own setup.
 
 ### Operations
 - **Cost tracking** — token usage and USD cost logged per API call
@@ -225,8 +242,8 @@ so `docker compose ps` flags a degraded deployment.
 | Tag       | Points at                     |
 |-----------|-------------------------------|
 | `latest`  | Most recent stable release    |
-| `0.6`     | Latest 0.6.x                  |
-| `0.6.5`   | Exact release (immutable)     |
+| `0.8`     | Latest 0.8.x                  |
+| `0.8.0`   | Exact release (immutable)     |
 
 ## Setup
 
@@ -250,13 +267,14 @@ Key sections:
 
 | Section | What it controls |
 |---------|-----------------|
+| `llm` | LLM provider (`anthropic` / `ollama`) + model selection |
 | `remarkable` | Cloud auth, folder filters, response folder |
 | `ocr` | Primary/fallback OCR engines, confidence threshold |
 | `processing` | Model selection, what to extract (actions, tags, summaries) |
 | `obsidian` | Vault path, folder mapping, Git sync settings |
-| `sync` | Trigger mode (realtime/scheduled/manual), WebSocket config |
+| `sync` | Trigger mode (realtime/scheduled/manual), streaming threshold |
 | `response` | Response format (PDF/notebook), auto-trigger rules |
-| `search` | Semantic search — backend, chunking, synthesis |
+| `search` | Semantic search — backend, chunking, batch size, synthesis |
 | `microsoft` | Outlook Tasks + Calendar + OneNote + Teams integration |
 | `reverse_sync` | Obsidian → reMarkable push-back triggers |
 | `plugins` | Plugin discovery + settings |
@@ -395,9 +413,10 @@ Reference plugin: [src/plugins/examples/at_mention_extractor.py](src/plugins/exa
 
 ### Semantic Search
 
-Enable semantic search by setting `search.enabled: true` in `config.yaml`. Three backends are supported:
+Enable semantic search by setting `search.enabled: true` in `config.yaml`. Four backends are supported:
 
 - **local** (default) — offline via `sentence-transformers`, no API costs. Install with `pip install 'remark-bridge[local-embeddings]'`.
+- **ollama** — fully offline via a local Ollama server (`nomic-embed-text` or similar). Set `llm.provider: ollama`. No extra install.
 - **voyage** — highest quality, requires `VOYAGE_API_KEY`. Install with `pip install 'remark-bridge[voyage]'`.
 - **openai** — solid quality, requires `OPENAI_API_KEY`. Install with `pip install 'remark-bridge[openai]'`.
 
@@ -424,26 +443,23 @@ remark-bridge device list
 
 Single-tablet installs don't need any of this — leaving `remarkable.devices` empty keeps the legacy single-device behaviour unchanged.
 
-### Obsidian companion plugin
+### Obsidian plugin
 
-Ships at [`contrib/obsidian-plugin/`](contrib/obsidian-plugin/) and publishes to the Obsidian community store under the id `remark-bridge`. It adds a ribbon icon and command to push the active note to your tablet, plus a status-bar widget that polls the bridge every 60 s.
-
-Issue a bearer token on the server, paste it into the plugin's settings, point it at your bridge URL:
-
-```bash
-remark-bridge bridge-token issue --label obsidian
-```
-
-The plugin retries failing requests with exponential back-off and surfaces errors as Obsidian notices. Release and community-store steps live in [`contrib/obsidian-plugin/COMMUNITY_STORE.md`](contrib/obsidian-plugin/COMMUNITY_STORE.md).
+Install **reMark Bridge** from the Obsidian Community Plugin
+Browser. Plugin source, issues, and PRs:
+[github.com/BGGBTAC/obsidian-remark-bridge](https://github.com/BGGBTAC/obsidian-remark-bridge).
 
 ### Bridge HTTP API
 
-For custom integrations (Alfred workflow, Raycast extension, another plugin) the same bearer-token auth is exposed via two endpoints:
+For custom integrations (Alfred workflow, Raycast extension, another plugin) the same bearer-token auth is exposed via these endpoints:
 
-| Endpoint          | Method | Purpose                                             |
-|-------------------|--------|-----------------------------------------------------|
-| `/api/status`     | GET    | Version, sync stats, queue summary                  |
-| `/api/push`       | POST   | `{vault_path}` — enqueue an Obsidian note for reverse-sync |
+| Endpoint                       | Method | Purpose                                             |
+|--------------------------------|--------|-----------------------------------------------------|
+| `/api/status`                  | GET    | Version, sync stats, queue summary                  |
+| `/api/push`                    | POST   | `{vault_path}` — enqueue an Obsidian note for reverse-sync |
+| `/api/notes/{path}/status`     | GET    | Per-note sync metadata (v0.8)                       |
+| `/api/notes/{path}/preview`    | GET    | First-page PNG, 24h content-hash cache (v0.8)       |
+| `/api/search`                  | POST   | `{query, mode, limit}` — semantic/bm25/hybrid (v0.8)|
 
 Manage tokens with `remark-bridge bridge-token issue|list|revoke`.
 

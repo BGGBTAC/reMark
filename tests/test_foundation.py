@@ -17,6 +17,7 @@ from src.sync.state import SyncState
 # Cost estimation
 # =====================
 
+
 class TestEstimateCost:
     def test_known_model(self):
         cost = estimate_cost("claude-sonnet-4-20250514", 1_000_000, 0)
@@ -51,6 +52,7 @@ class TestEstimateCost:
 # log_anthropic_response
 # =====================
 
+
 class TestLogAnthropicResponse:
     def test_logs_with_state(self, tmp_path):
         state = SyncState(tmp_path / "usage.db")
@@ -61,7 +63,8 @@ class TestLogAnthropicResponse:
         response.usage.output_tokens = 500
 
         log_anthropic_response(
-            state, response,
+            state,
+            response,
             model="claude-sonnet-4-20250514",
             operation="structure",
             doc_id="doc-123",
@@ -110,6 +113,7 @@ class TestLogEmbeddingUsage:
 # api_usage aggregation
 # =====================
 
+
 class TestApiUsageSummary:
     def test_empty_db(self, tmp_path):
         state = SyncState(tmp_path / "empty.db")
@@ -136,14 +140,20 @@ class TestApiUsageSummary:
 # Deletion handling — state
 # =====================
 
+
 class TestDeletionState:
     def test_list_active_docs(self, tmp_path):
         state = SyncState(tmp_path / "d.db")
 
         state.mark_synced(
-            doc_id="d1", doc_name="Active", parent_folder="",
-            cloud_hash="h1", vault_path="/v/a.md", ocr_engine="crdt",
-            page_count=1, action_count=0,
+            doc_id="d1",
+            doc_name="Active",
+            parent_folder="",
+            cloud_hash="h1",
+            vault_path="/v/a.md",
+            ocr_engine="crdt",
+            page_count=1,
+            action_count=0,
         )
         state.mark_error("d2", "broke")
 
@@ -155,9 +165,14 @@ class TestDeletionState:
     def test_mark_archived(self, tmp_path):
         state = SyncState(tmp_path / "ar.db")
         state.mark_synced(
-            doc_id="d1", doc_name="X", parent_folder="",
-            cloud_hash="h", vault_path="/v/x.md", ocr_engine="crdt",
-            page_count=1, action_count=0,
+            doc_id="d1",
+            doc_name="X",
+            parent_folder="",
+            cloud_hash="h",
+            vault_path="/v/x.md",
+            ocr_engine="crdt",
+            page_count=1,
+            action_count=0,
         )
         state.mark_archived("d1")
 
@@ -170,6 +185,7 @@ class TestDeletionState:
 # =====================
 # Vault archiving
 # =====================
+
 
 class TestVaultArchive:
     def test_archive_note_moves_file(self, tmp_path):

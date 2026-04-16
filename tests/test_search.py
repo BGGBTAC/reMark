@@ -23,6 +23,7 @@ from src.search.query import SearchQuery
 # chunker
 # =====================
 
+
 class TestChunker:
     def test_basic_chunking(self):
         text = "# Heading\n\nSome paragraph text here.\n\nAnother paragraph."
@@ -31,11 +32,7 @@ class TestChunker:
         assert all(isinstance(c, Chunk) for c in chunks)
 
     def test_heading_path_tracking(self):
-        text = (
-            "# Top\n\nIntro\n\n"
-            "## Sub A\n\nContent A\n\n"
-            "## Sub B\n\nContent B"
-        )
+        text = "# Top\n\nIntro\n\n## Sub A\n\nContent A\n\n## Sub B\n\nContent B"
         chunks = chunk_markdown(text, chunk_size=50)
 
         paths = [c.heading_path for c in chunks]
@@ -56,17 +53,13 @@ class TestChunker:
 
     def test_respects_chunk_size(self):
         # Long content should be split
-        long_text = ("This is a long paragraph. " * 30)
+        long_text = "This is a long paragraph. " * 30
         text = f"# Section\n\n{long_text}"
         chunks = chunk_markdown(text, chunk_size=200)
         assert len(chunks) > 1
 
     def test_preserves_code_fences(self):
-        text = (
-            "# Code\n\nHere is code:\n\n"
-            "```python\ndef foo():\n    pass\n```\n\n"
-            "More text."
-        )
+        text = "# Code\n\nHere is code:\n\n```python\ndef foo():\n    pass\n```\n\nMore text."
         chunks = chunk_markdown(text, chunk_size=1000)
         combined = " ".join(c.content for c in chunks)
         assert "def foo():" in combined
@@ -89,6 +82,7 @@ class TestChunker:
 # =====================
 # backends
 # =====================
+
 
 class TestBackends:
     def test_default_models(self):
@@ -138,6 +132,7 @@ class TestBackends:
 # =====================
 # VectorIndex
 # =====================
+
 
 class MockEmbedding(EmbeddingBackend):
     """Deterministic embedding backend for testing."""
@@ -190,14 +185,18 @@ class TestVectorIndex:
         index = VectorIndex(tmp_path / "r.db", dimension=4)
 
         index.upsert_document(
-            "doc-1", "/v/note.md",
+            "doc-1",
+            "/v/note.md",
             [Chunk(index=0, content="old", heading_path=[], start_offset=0)],
             [[0.1, 0.2, 0.3, 0.4]],
         )
         index.upsert_document(
-            "doc-1", "/v/note.md",
-            [Chunk(index=0, content="new v1", heading_path=[], start_offset=0),
-             Chunk(index=1, content="new v2", heading_path=[], start_offset=5)],
+            "doc-1",
+            "/v/note.md",
+            [
+                Chunk(index=0, content="new v1", heading_path=[], start_offset=0),
+                Chunk(index=1, content="new v2", heading_path=[], start_offset=5),
+            ],
             [[0.2, 0.3, 0.4, 0.5], [0.3, 0.4, 0.5, 0.6]],
         )
 
@@ -206,12 +205,14 @@ class TestVectorIndex:
     def test_remove_document(self, tmp_path):
         index = VectorIndex(tmp_path / "rm.db", dimension=4)
         index.upsert_document(
-            "doc-1", "/v/a.md",
+            "doc-1",
+            "/v/a.md",
             [Chunk(index=0, content="x", heading_path=[], start_offset=0)],
             [[0.1, 0.2, 0.3, 0.4]],
         )
         index.upsert_document(
-            "doc-2", "/v/b.md",
+            "doc-2",
+            "/v/b.md",
             [Chunk(index=0, content="y", heading_path=[], start_offset=0)],
             [[0.5, 0.6, 0.7, 0.8]],
         )
@@ -239,7 +240,8 @@ class TestVectorIndex:
     def test_search_respects_min_score(self, tmp_path):
         index = VectorIndex(tmp_path / "sc.db", dimension=4)
         index.upsert_document(
-            "doc-1", "/v/n.md",
+            "doc-1",
+            "/v/n.md",
             [Chunk(index=0, content="x", heading_path=[], start_offset=0)],
             [[1.0, 0.0, 0.0, 0.0]],
         )
@@ -252,7 +254,8 @@ class TestVectorIndex:
         index = VectorIndex(tmp_path / "d.db", dimension=4)
         with pytest.raises(ValueError, match="dimension"):
             index.upsert_document(
-                "doc-1", "/v/n.md",
+                "doc-1",
+                "/v/n.md",
                 [Chunk(index=0, content="x", heading_path=[], start_offset=0)],
                 [[1.0, 2.0]],  # wrong dim
             )
@@ -260,7 +263,8 @@ class TestVectorIndex:
     def test_clear(self, tmp_path):
         index = VectorIndex(tmp_path / "cl.db", dimension=4)
         index.upsert_document(
-            "doc-1", "/v/n.md",
+            "doc-1",
+            "/v/n.md",
             [Chunk(index=0, content="x", heading_path=[], start_offset=0)],
             [[1.0, 0.0, 0.0, 0.0]],
         )
@@ -273,6 +277,7 @@ class TestVectorIndex:
 # =====================
 # Indexer
 # =====================
+
 
 class TestIndexer:
     @pytest.mark.asyncio
@@ -320,6 +325,7 @@ class TestIndexer:
 # SearchQuery
 # =====================
 
+
 class TestSearchQuery:
     @pytest.mark.asyncio
     async def test_ask_returns_hits(self, tmp_path):
@@ -355,8 +361,12 @@ class TestSearchQuery:
         index = VectorIndex(tmp_path / "syn.db", dimension=8)
 
         chunks = [
-            Chunk(index=0, content="The project deadline is Friday",
-                  heading_path=["Meeting"], start_offset=0),
+            Chunk(
+                index=0,
+                content="The project deadline is Friday",
+                heading_path=["Meeting"],
+                start_offset=0,
+            ),
         ]
         vectors = await backend.embed(["The project deadline is Friday"])
         index.upsert_document("doc-1", "/v/meeting.md", chunks, vectors)

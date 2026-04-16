@@ -9,6 +9,7 @@ result to every configured channel.
 Persistence lives in :class:`src.sync.state.SyncState`'s ``reports``
 table; runtime orchestration in :class:`ReportRunner` here.
 """
+
 from src.reports.runner import ReportRunner, run_report
 from src.reports.scheduler import ReportScheduler
 

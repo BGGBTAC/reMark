@@ -18,6 +18,7 @@ DEFAULT_MODELS = {
     "voyage": "voyage-3.5",
     "openai": "text-embedding-3-small",
     "local": "all-MiniLM-L6-v2",
+    "ollama": "nomic-embed-text",
 }
 
 
@@ -30,8 +31,7 @@ class EmbeddingBackend(ABC):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @property
     @abstractmethod
@@ -68,6 +68,7 @@ class VoyageBackend(EmbeddingBackend):
         if self._client is None:
             try:
                 import voyageai
+
                 self._client = voyageai.AsyncClient(api_key=self._api_key)
             except ImportError as e:
                 raise EmbeddingError(
@@ -107,6 +108,7 @@ class OpenAIBackend(EmbeddingBackend):
         if self._client is None:
             try:
                 from openai import AsyncOpenAI
+
                 self._client = AsyncOpenAI(api_key=self._api_key)
             except ImportError as e:
                 raise EmbeddingError(
@@ -148,6 +150,7 @@ class LocalBackend(EmbeddingBackend):
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
+
                 self._model = SentenceTransformer(self._model_name)
                 self._dimension = self._model.get_sentence_embedding_dimension()
             except ImportError as e:
@@ -162,12 +165,74 @@ class LocalBackend(EmbeddingBackend):
             # sentence-transformers is sync, run in executor
             loop = asyncio.get_event_loop()
             vectors = await loop.run_in_executor(
-                None, lambda: self._model.encode(texts, convert_to_numpy=False),
+                None,
+                lambda: self._model.encode(texts, convert_to_numpy=False),
             )
             # Convert torch tensors / numpy arrays to lists of floats
             return [list(map(float, v)) for v in vectors]
         except Exception as e:
             raise EmbeddingError(f"Local embedding failed: {e}") from e
+
+
+# Known Ollama embedding models and their output dimensions.
+# Extend as new models become common; unknown models default to 768.
+OLLAMA_MODEL_DIMENSIONS = {
+    "nomic-embed-text": 768,
+    "mxbai-embed-large": 1024,
+    "snowflake-arctic-embed": 1024,
+    "all-minilm": 384,
+}
+
+
+class OllamaEmbeddingBackend(EmbeddingBackend):
+    """Embeddings via a local Ollama server (/api/embeddings).
+
+    Ollama's endpoint accepts one prompt per call, so ``embed()`` loops.
+    The default dimension is pulled from a known-model table; unknown
+    models fall back to 768 (the most common embedding size today).
+    """
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        model: str = "nomic-embed-text",
+        http=None,
+        max_batch_size: int = 32,
+    ):
+        self._base_url = base_url.rstrip("/")
+        self._model = model
+        self._http = http
+        self._max_batch = max_batch_size
+        self._dimension = OLLAMA_MODEL_DIMENSIONS.get(model, 768)
+
+    @property
+    def name(self) -> str:
+        return "ollama"
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    @property
+    def max_batch_size(self) -> int:
+        return self._max_batch
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        if self._http is None:
+            import httpx
+
+            self._http = httpx.AsyncClient(timeout=120.0)
+        results: list[list[float]] = []
+        for text in texts:
+            resp = await self._http.post(
+                f"{self._base_url}/api/embeddings",
+                json={"model": self._model, "prompt": text},
+            )
+            resp.raise_for_status()
+            results.append(resp.json().get("embedding", []))
+        return results
 
 
 def build_backend(
@@ -180,21 +245,23 @@ def build_backend(
         env_var = api_key_env or "VOYAGE_API_KEY"
         api_key = os.environ.get(env_var, "")
         if not api_key:
-            raise EmbeddingError(
-                f"Voyage backend requires {env_var} environment variable"
-            )
+            raise EmbeddingError(f"Voyage backend requires {env_var} environment variable")
         return VoyageBackend(api_key=api_key, model=model)
 
     if backend_name == "openai":
         env_var = api_key_env or "OPENAI_API_KEY"
         api_key = os.environ.get(env_var, "")
         if not api_key:
-            raise EmbeddingError(
-                f"OpenAI backend requires {env_var} environment variable"
-            )
+            raise EmbeddingError(f"OpenAI backend requires {env_var} environment variable")
         return OpenAIBackend(api_key=api_key, model=model)
 
     if backend_name == "local":
         return LocalBackend(model=model)
+
+    if backend_name == "ollama":
+        return OllamaEmbeddingBackend(
+            base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+            model=model or DEFAULT_MODELS["ollama"],
+        )
 
     raise EmbeddingError(f"Unknown embedding backend: {backend_name}")

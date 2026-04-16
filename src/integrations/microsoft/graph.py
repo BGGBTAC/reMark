@@ -85,14 +85,21 @@ class GraphClient:
             try:
                 headers = await self._headers()
                 resp = await self.client.request(
-                    method, url, headers=headers, params=params, json=json,
+                    method,
+                    url,
+                    headers=headers,
+                    params=params,
+                    json=json,
                 )
 
                 if resp.status_code == 429 or resp.status_code >= 500:
-                    retry_after = int(resp.headers.get("Retry-After", RETRY_BACKOFF ** attempt))
+                    retry_after = int(resp.headers.get("Retry-After", RETRY_BACKOFF**attempt))
                     logger.warning(
                         "Graph %s %s -> %d, retrying in %ds",
-                        method, endpoint, resp.status_code, retry_after,
+                        method,
+                        endpoint,
+                        resp.status_code,
+                        retry_after,
                     )
                     await asyncio.sleep(retry_after)
                     continue
@@ -102,9 +109,7 @@ class GraphClient:
                         error = resp.json().get("error", {}).get("message", resp.text)
                     except Exception:
                         error = resp.text
-                    raise GraphError(
-                        f"{method} {endpoint} failed: {resp.status_code} {error}"
-                    )
+                    raise GraphError(f"{method} {endpoint} failed: {resp.status_code} {error}")
 
                 if not expect_json or resp.status_code == 204:
                     return None
@@ -112,6 +117,6 @@ class GraphClient:
 
             except httpx.TransportError as e:
                 last_error = e
-                await asyncio.sleep(RETRY_BACKOFF ** attempt)
+                await asyncio.sleep(RETRY_BACKOFF**attempt)
 
         raise GraphError(f"{method} {endpoint} failed after {MAX_RETRIES} retries: {last_error}")

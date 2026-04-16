@@ -82,7 +82,12 @@ async def send_push_async(
     it in ``asyncio.to_thread`` keeps other requests moving.
     """
     return await asyncio.to_thread(
-        send_push, config, state, title, body, url,
+        send_push,
+        config,
+        state,
+        title,
+        body,
+        url,
     )
 
 

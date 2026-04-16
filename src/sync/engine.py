@@ -14,6 +14,9 @@ from pathlib import Path
 import anthropic
 
 from src.config import AppConfig, resolve_path
+from src.http_pool import SharedHttpPool
+from src.llm.client import LLMClient
+from src.llm.factory import build_llm_client
 from src.obsidian.frontmatter import generate_frontmatter
 from src.obsidian.git_sync import GitSync
 from src.obsidian.templates import format_note_content
@@ -29,6 +32,23 @@ from src.remarkable.formats import Notebook, extract_strokes_by_color, parse_not
 from src.sync.state import SyncState
 
 logger = logging.getLogger(__name__)
+
+# Cache root for persisted .rm pages. The bridge preview endpoint reads
+# from here — keeping it module-level makes it easy to monkeypatch in tests.
+_RM_CACHE_ROOT = Path("~/.remark-bridge/cache").expanduser()
+
+
+def _cache_rm_bytes(doc_id: str, rm_bytes: bytes) -> None:
+    """Persist the latest .rm page so the bridge API can render previews.
+
+    Only the first page is stored — the preview endpoint renders page 0
+    and doesn't need the full document. Writing it here, right after
+    download, means the file is available even when OCR or processing
+    subsequently fail.
+    """
+    cache_dir = _RM_CACHE_ROOT / doc_id
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "last.rm").write_bytes(rm_bytes)
 
 
 @dataclass
@@ -80,15 +100,31 @@ class SyncEngine:
         self._state: SyncState | None = None
         self._vault: ObsidianVault | None = None
         self._git: GitSync | None = None
+        self._llm_client: LLMClient | None = None
+        # Kept separately for ResponseGenerator, which still uses the raw
+        # Anthropic SDK surface (messages.create, tool_use, etc.).
         self._anthropic: anthropic.AsyncAnthropic | None = None
         self._indexer = None  # Lazy — only built if search is enabled
         self._plugins = None  # Lazy plugin registry
+        # Shared keep-alive client reused across auth refreshes, Teams
+        # webhooks, and any other one-off integration POSTs this engine
+        # triggers. Long-lived protocol clients (RemarkableCloud, Notion)
+        # manage their own pools and are NOT routed through this one.
+        self._http_pool = SharedHttpPool()
         # Multi-device + multi-user context: the active (user, device)
         # for the current cycle. Set via set_device(); used when
         # writing sync_state rows.
         self._current_device_id: str = "default"
         self._current_vault_subfolder: str = ""
         self._current_user_id: int = 1  # pre-0.7 single-user default
+
+    async def close(self) -> None:
+        """Release pooled resources.
+
+        Called by the CLI / web runner after all sync cycles are done.
+        Safe to call multiple times.
+        """
+        await self._http_pool.close()
 
     def set_device(
         self,
@@ -134,13 +170,35 @@ class SyncEngine:
             )
         return self._git
 
+    def _get_llm_client(self) -> LLMClient:
+        """Return the shared LLMClient, constructing it on first call.
+
+        All processing consumers (structurer, tagger, summarizer, extractor)
+        receive this rather than a raw vendor SDK client, so switching
+        providers is a config-only operation.
+        """
+        if self._llm_client is None:
+            import os
+
+            self._llm_client = build_llm_client(
+                self._config.llm,
+                anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+            )
+        return self._llm_client
+
     def _get_anthropic(self) -> anthropic.AsyncAnthropic:
+        """Raw Anthropic client for ResponseGenerator, which still uses the
+        SDK directly (messages.create, streaming, etc.). Processing consumers
+        should use _get_llm_client() instead."""
         if self._anthropic is None:
             import os
+
             api_key = os.environ.get(self._config.processing.api_key_env, "")
             client = anthropic.AsyncAnthropic(api_key=api_key)
             self._anthropic = _wrap_client_for_usage_tracking(
-                client, self._config.processing.model, self.state,
+                client,
+                self._config.processing.model,
+                self.state,
             )
         return self._anthropic
 
@@ -149,6 +207,7 @@ class SyncEngine:
         """Lazy-load the plugin registry."""
         if self._plugins is None:
             from src.plugins.registry import PluginRegistry
+
             self._plugins = PluginRegistry(self._config.plugins)
             self._plugins.discover()
         return self._plugins
@@ -251,14 +310,17 @@ class SyncEngine:
                     continue
                 try:
                     result = await self.process_document(
-                        doc, doc_manager, ocr_pipeline,
+                        doc,
+                        doc_manager,
+                        ocr_pipeline,
                     )
                     if result.success:
                         self.state.mark_queue_done(queue_id)
                         report.processed.append(result)
                     else:
                         self.state.mark_queue_failed(
-                            queue_id, result.error or "unknown",
+                            queue_id,
+                            result.error or "unknown",
                         )
                 except Exception as e:  # noqa: BLE001
                     self.state.mark_queue_failed(queue_id, str(e))
@@ -296,12 +358,15 @@ class SyncEngine:
 
         logger.info(
             "Found %d documents: %d to process, %d up-to-date",
-            len(docs), len(to_process), report.skipped,
+            len(docs),
+            len(to_process),
+            report.skipped,
         )
 
         # Fire pre-sync plugin hooks
         if self._config.plugins.enabled:
             from src.plugins.hooks import SyncHook
+
             for plugin in self.plugins.hooks(SyncHook):
                 try:
                     await plugin.before_sync({"docs_found": len(docs)})
@@ -338,14 +403,18 @@ class SyncEngine:
         if self._config.reverse_sync.enabled:
             try:
                 from src.sync.reverse_sync import ReverseSyncer
+
                 syncer = ReverseSyncer(
-                    self._config.reverse_sync, self.vault, self.state,
+                    self._config.reverse_sync,
+                    self.vault,
+                    self.state,
                 )
                 rev = await syncer.run(cloud)
                 if rev.total > 0:
                     logger.info(
                         "Reverse-sync: %d pushed, %d failed",
-                        len(rev.pushed), len(rev.failed),
+                        len(rev.pushed),
+                        len(rev.failed),
                     )
             except Exception as e:
                 logger.warning("Reverse-sync failed: %s", e)
@@ -360,12 +429,16 @@ class SyncEngine:
         report.duration_ms = int((time.monotonic() - start) * 1000)
         logger.info(
             "Sync complete: %d processed, %d skipped, %d errors (%dms)",
-            report.success_count, report.skipped, report.errors, report.duration_ms,
+            report.success_count,
+            report.skipped,
+            report.errors,
+            report.duration_ms,
         )
 
         # Fire post-sync plugin hooks
         if self._config.plugins.enabled:
             from src.plugins.hooks import SyncHook
+
             report_dict = {
                 "total": report.total,
                 "success": report.success_count,
@@ -379,7 +452,8 @@ class SyncEngine:
                 except Exception as e:
                     logger.warning(
                         "SyncHook '%s' after_sync failed: %s",
-                        plugin.metadata.name, e,
+                        plugin.metadata.name,
+                        e,
                     )
 
         return report
@@ -400,6 +474,22 @@ class SyncEngine:
 
             # Parse .rm files
             pages = parse_notebook(resolved.local_dir, doc.id, resolved.page_ids)
+
+            # Cache the first page's raw bytes so the bridge preview endpoint
+            # can render them later without re-downloading the whole document.
+            if resolved.page_ids:
+                from src.remarkable.formats import _find_rm_file
+
+                first_rm = _find_rm_file(resolved.local_dir, doc.id, resolved.page_ids[0])
+                if first_rm is not None:
+                    try:
+                        _cache_rm_bytes(doc.id, first_rm.read_bytes())
+                    except Exception as _cache_err:
+                        logger.warning(
+                            "Could not cache .rm bytes for %s: %s",
+                            doc.id[:8],
+                            _cache_err,
+                        )
 
             # Build Notebook dataclass
             notebook = Notebook(
@@ -425,20 +515,23 @@ class SyncEngine:
                 logger.info("No text extracted from %s, skipping processing", doc.name)
                 duration = int((time.monotonic() - start) * 1000)
                 return ProcessResult(
-                    doc_id=doc.id, doc_name=doc.name, success=True,
-                    page_count=len(pages), duration_ms=duration,
+                    doc_id=doc.id,
+                    doc_name=doc.name,
+                    success=True,
+                    page_count=len(pages),
+                    duration_ms=duration,
                 )
 
-            # Processing via Anthropic API
-            client = self._get_anthropic()
+            # Processing via configured LLM provider
+            llm = self._get_llm_client()
             model = self._config.processing.model
 
-            structurer = NoteStructurer(client, model)
+            structurer = NoteStructurer(llm=llm, model=model)
             structured = await structurer.structure(raw_text, notebook.name)
 
             actions = []
             if self._config.processing.extract_actions:
-                extractor = ActionExtractor(client, model)
+                extractor = ActionExtractor(llm=llm, model=model)
                 color_annotations = None
                 action_colors = self._config.processing.actions.action_colors
                 if action_colors:
@@ -450,19 +543,23 @@ class SyncEngine:
             tags = []
             if self._config.processing.extract_tags:
                 tagger = NoteTagger(
-                    client, model,
+                    llm=llm,
+                    model=model,
                     hierarchical=self._config.processing.hierarchical_tags,
                 )
                 tags = await tagger.tag(structured.content_md, notebook.name)
 
             summary = None
             if self._config.processing.generate_summary:
-                summarizer = NoteSummarizer(client, model)
+                summarizer = NoteSummarizer(llm=llm, model=model)
                 summary = await summarizer.summarize(structured.content_md, notebook.name)
 
             # Generate frontmatter
             frontmatter = generate_frontmatter(
-                notebook, ocr_results, actions, tags,
+                notebook,
+                ocr_results,
+                actions,
+                tags,
                 summary_one_line=summary.one_line if summary else "",
             )
 
@@ -481,11 +578,13 @@ class SyncEngine:
                 if template_entry:
                     try:
                         from src.templates.engine import TemplateEngine
+
                         engine = TemplateEngine(self._config.templates.user_templates_dir)
                         template = engine.get(template_entry["template_name"])
                         if template is not None:
                             extracted = engine.extract_fields(
-                                template.name, structured.content_md,
+                                template.name,
+                                structured.content_md,
                             )
                             if extracted:
                                 frontmatter["template"] = template.name
@@ -496,13 +595,15 @@ class SyncEngine:
             # Plugin note-processors (last chance to mutate content/frontmatter)
             if self._config.plugins.enabled:
                 from src.plugins.hooks import NoteProcessorHook
+
                 for plugin in self.plugins.hooks(NoteProcessorHook):
                     try:
                         content, frontmatter = await plugin.process(content, frontmatter)
                     except Exception as e:
                         logger.warning(
                             "NoteProcessor plugin '%s' failed: %s",
-                            plugin.metadata.name, e,
+                            plugin.metadata.name,
+                            e,
                         )
 
             # Write to vault — prefix with the active device's subfolder
@@ -528,16 +629,23 @@ class SyncEngine:
             # Microsoft integration: push action items to To Do / Calendar / OneNote
             if self._config.microsoft.enabled:
                 from src.integrations.microsoft.service import MicrosoftService
+
                 ms_service = MicrosoftService(self._config.microsoft)
                 if ms_service.enabled and actions:
                     ms_result = await ms_service.sync_actions(actions, source_note=notebook.name)
                     for task_id in ms_result.tasks_created:
                         self.state.record_external_link(
-                            doc.id, "microsoft_todo", "task", task_id,
+                            doc.id,
+                            "microsoft_todo",
+                            "task",
+                            task_id,
                         )
                     for event_id in ms_result.events_created:
                         self.state.record_external_link(
-                            doc.id, "microsoft_calendar", "event", event_id,
+                            doc.id,
+                            "microsoft_calendar",
+                            "event",
+                            event_id,
                         )
 
                 # OneNote parallel write (if enabled)
@@ -551,7 +659,10 @@ class SyncEngine:
                         )
                         if page_id:
                             self.state.record_external_link(
-                                doc.id, "microsoft_onenote", "page", page_id,
+                                doc.id,
+                                "microsoft_onenote",
+                                "page",
+                                page_id,
                             )
                     except Exception as e:
                         logger.warning("OneNote mirror failed for %s: %s", doc.name, e)
@@ -560,6 +671,7 @@ class SyncEngine:
             if self._config.notion.enabled:
                 try:
                     from src.integrations.notion import NotionService
+
                     notion_service = NotionService(self._config.notion)
                     if notion_service.enabled:
                         result_notion = await notion_service.write_note(
@@ -569,7 +681,10 @@ class SyncEngine:
                         )
                         if result_notion is not None:
                             self.state.record_external_link(
-                                doc.id, "notion", "page", result_notion.page_id,
+                                doc.id,
+                                "notion",
+                                "page",
+                                result_notion.page_id,
                             )
                 except Exception as e:
                     logger.warning("Notion mirror failed for %s: %s", doc.name, e)
@@ -597,7 +712,10 @@ class SyncEngine:
                 has_blue_questions = False
                 if question_colors:
                     color_groups = extract_strokes_by_color(
-                        resolved.local_dir, doc.id, resolved.page_ids, question_colors,
+                        resolved.local_dir,
+                        doc.id,
+                        resolved.page_ids,
+                        question_colors,
                     )
                     has_blue_questions = any(color_groups.values())
                 if should_auto_trigger(
@@ -615,7 +733,11 @@ class SyncEngine:
             duration = int((time.monotonic() - start) * 1000)
             logger.info(
                 "Processed %s: %d pages, %d actions, %d tags (%dms)",
-                doc.name, len(pages), len(actions), len(tags), duration,
+                doc.name,
+                len(pages),
+                len(actions),
+                len(tags),
+                duration,
             )
 
             return ProcessResult(
@@ -644,7 +766,9 @@ class SyncEngine:
                 )
             except Exception as enqueue_err:
                 logger.warning(
-                    "Couldn't enqueue retry for %s: %s", doc.name, enqueue_err,
+                    "Couldn't enqueue retry for %s: %s",
+                    doc.name,
+                    enqueue_err,
                 )
             return ProcessResult(
                 doc_id=doc.id,
@@ -709,19 +833,25 @@ class SyncEngine:
                 pushed += 1
                 logger.info(
                     "Pushed response for %s (%d questions, %d actions)",
-                    doc_name, response.question_count, response.action_count,
+                    doc_name,
+                    response.question_count,
+                    response.action_count,
                 )
 
             except Exception as e:
                 logger.warning(
                     "Failed to push response for %s: %s",
-                    doc_id[:8], e, exc_info=True,
+                    doc_id[:8],
+                    e,
+                    exc_info=True,
                 )
 
         return pushed
 
     async def generate_response_for_note(
-        self, note_path: Path, cloud: RemarkableCloud,
+        self,
+        note_path: Path,
+        cloud: RemarkableCloud,
     ) -> bool:
         """Manually generate and push a response for a specific vault note.
 

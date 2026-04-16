@@ -4,6 +4,94 @@ All notable changes to **reMark** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) and its commits group into the
 phases described in the release notes.
 
+## [0.8.0] — 2026-04-16
+
+"Offline & Scale." Two themes in one release: a provider-agnostic
+LLM layer that lets Ollama replace every cloud call, and a round
+of performance work — streaming downloads, cross-document batch
+embeddings, a shared httpx pool. Also: the Obsidian plugin is now
+in its own repo and the Community Store, and three new bridge API
+endpoints let the next plugin version surface note status,
+previews, and vault search.
+
+### Added
+
+- **`src/llm/` module.** `LLMClient` ABC with `complete()` +
+  `complete_vision()`. `AnthropicClient` wraps the existing SDK;
+  `OllamaClient` talks to `/api/chat` and `/api/generate`. A
+  factory (`build_llm_client`) picks the right one from
+  `llm.provider`. Every consumer (processing, reports, OCR VLM)
+  now takes an `LLMClient` by DI — nothing imports `anthropic`
+  directly anymore.
+- **Ollama embeddings.** New `OllamaEmbeddingBackend` alongside
+  Voyage / OpenAI / sentence-transformers. Known-model dimension
+  table covers `nomic-embed-text`, `mxbai-embed-large`,
+  `snowflake-arctic-embed`, `all-minilm`; unknown models default
+  to 768.
+- **Ollama OCR.** `VLMOcr` now takes an `LLMClient`, so setting
+  `llm.provider: ollama` routes handwriting OCR through `llava`
+  (or any configured vision model).
+- **Bridge API v2** (all Bearer-token auth like `/api/push`):
+    - `GET /api/notes/{path}/status` — per-note sync metadata
+    - `GET /api/notes/{path}/preview` — first-page PNG rendered
+      from the cached `.rm` with a 24h content-hash cache
+    - `POST /api/search` — `{query, mode, limit}` across the
+      indexed vault; modes `semantic | bm25 | hybrid`
+- **Streaming downloads.** `src/remarkable/streaming.py` spills
+  blobs above `sync.streaming_threshold_bytes` (default 5 MB) to
+  `sync.temp_dir` instead of buffering in RAM. Small blobs keep
+  the in-memory fast path.
+- **Batch embeddings.** `reindex_vault()` now collects chunks
+  across every note and embeds them in batches sized to the
+  backend's `max_batch_size` (default 64). The CLI shows a
+  `[reindex] done/total` progress line.
+- **Shared httpx pool** (`src/http_pool.py`): auth refresh and
+  Teams webhook dispatch now accept a `SharedHttpPool` and reuse
+  one keep-alive client instead of spawning per-request clients.
+  `RemarkableCloud` and Notion keep their existing long-lived
+  pools (they have provider-specific interceptors).
+- **`remark-bridge bench`** — synthetic embedding throughput
+  measurement: chunks/sec + peak RSS.
+- **Settings UI**: `/settings/llm` form auto-rendered from
+  `LLMConfig` + `OllamaConfig`.
+- **`docs/OLLAMA.md`** — end-to-end offline setup guide.
+
+### Changed
+
+- **Processing + reports + OCR VLM** take `LLMClient` instead of
+  `anthropic.AsyncAnthropic` directly. Behavior is identical for
+  `provider: anthropic` (the default).
+- **Obsidian plugin** moved out of the monorepo. It now lives at
+  [github.com/BGGBTAC/obsidian-remark-bridge](https://github.com/BGGBTAC/obsidian-remark-bridge)
+  and is listed in the Community Store.
+  `contrib/obsidian-plugin/` kept as a pointer README.
+
+### Config
+
+New top-level section:
+```yaml
+llm:
+  provider: anthropic       # anthropic | ollama
+  ollama:
+    base_url: http://localhost:11434
+    text_model: llama3.1
+    vision_model: llava
+    embedding_model: nomic-embed-text
+    timeout_seconds: 120
+```
+
+New keys:
+- `sync.streaming_threshold_bytes` (default 5 * 1024 * 1024)
+- `sync.temp_dir` (default `~/.remark-bridge/tmp`)
+- `search.batch_size` (default 64)
+
+### Migration
+
+Fully additive. Installs without an `llm:` block (or with
+`provider: anthropic`) behave identically to 0.7.1. Flipping
+to `provider: ollama` requires a running Ollama server with the
+configured models pulled — see `docs/OLLAMA.md`.
+
 ## [0.7.1] — 2026-04-16
 
 Patch release — four fixes discovered during the 0.7.0 rollout.

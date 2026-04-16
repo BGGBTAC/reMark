@@ -32,8 +32,10 @@ class GoogleVisionOCR(OCREngine):
         """Lazy-init the Vision API client."""
         if self._client is None:
             import os
+
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(self._credentials_path)
             from google.cloud import vision
+
             self._client = vision.ImageAnnotatorClient()
         return self._client
 
@@ -44,6 +46,7 @@ class GoogleVisionOCR(OCREngine):
         and handles handwriting better than plain TEXT_DETECTION.
         """
         import asyncio
+
         # google-cloud-vision is sync, run in executor
         return await asyncio.get_event_loop().run_in_executor(
             None, self._recognize_sync, page_image
@@ -81,9 +84,7 @@ class GoogleVisionOCR(OCREngine):
             for block in page.blocks:
                 for paragraph in block.paragraphs:
                     for word in paragraph.words:
-                        word_text = "".join(
-                            symbol.text for symbol in word.symbols
-                        )
+                        word_text = "".join(symbol.text for symbol in word.symbols)
                         word_conf = word.confidence
                         confidences.append(word_conf)
 
@@ -94,16 +95,23 @@ class GoogleVisionOCR(OCREngine):
                             y = min(v.y for v in verts)
                             w = max(v.x for v in verts) - x
                             h = max(v.y for v in verts) - y
-                            boxes.append(BoundingBox(
-                                x=x, y=y, width=w, height=h,
-                                text=word_text, confidence=word_conf,
-                            ))
+                            boxes.append(
+                                BoundingBox(
+                                    x=x,
+                                    y=y,
+                                    width=w,
+                                    height=h,
+                                    text=word_text,
+                                    confidence=word_conf,
+                                )
+                            )
 
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
 
         logger.debug(
             "Google Vision: %d words, avg confidence %.2f",
-            len(confidences), avg_confidence,
+            len(confidences),
+            avg_confidence,
         )
 
         return OCRResult(

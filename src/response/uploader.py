@@ -45,7 +45,9 @@ class ResponseUploader:
             doc_id = await self._cloud.upload_document(tmp_path, parent_folder=folder_id)
             logger.info(
                 "Uploaded PDF response '%s' (%s) to %s",
-                title, doc_id[:8], self._response_folder,
+                title,
+                doc_id[:8],
+                self._response_folder,
             )
             return doc_id
         finally:
@@ -81,7 +83,9 @@ class ResponseUploader:
             doc_id = await self._cloud.upload_document(tmp_path, parent_folder=folder_id)
             logger.info(
                 "Uploaded notebook response '%s' (%s) to %s",
-                title, doc_id[:8], self._response_folder,
+                title,
+                doc_id[:8],
+                self._response_folder,
             )
             return doc_id
         finally:

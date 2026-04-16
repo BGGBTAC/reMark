@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 
 from src.config import TeamsConfig
+from src.http_pool import SharedHttpPool
 from src.integrations.microsoft.graph import GraphClient
 from src.obsidian.vault import ObsidianVault
 from src.sync.state import SyncState
@@ -26,7 +27,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DigestData:
     """Data assembled for a digest post."""
-    period: str                    # "daily" | "weekly"
+
+    period: str  # "daily" | "weekly"
     notes_count: int
     action_items: list[dict]
     top_tags: list[str]
@@ -76,10 +78,12 @@ def build_digest(
             for line in action_file.read_text(encoding="utf-8").split("\n"):
                 stripped = line.strip()
                 if stripped.startswith("- [ ]"):
-                    action_items.append({
-                        "source": source,
-                        "text": stripped[6:].strip(),
-                    })
+                    action_items.append(
+                        {
+                            "source": source,
+                            "text": stripped[6:].strip(),
+                        }
+                    )
 
     # API cost in window
     usage = state.get_api_usage_summary(days=days)
@@ -109,12 +113,14 @@ def render_adaptive_card(digest: DigestData, title_prefix: str = "reMark") -> di
 
     action_blocks = []
     for item in digest.action_items[:5]:
-        action_blocks.append({
-            "type": "TextBlock",
-            "text": f"• {item['text']}  _({item['source']})_",
-            "wrap": True,
-            "spacing": "None",
-        })
+        action_blocks.append(
+            {
+                "type": "TextBlock",
+                "text": f"• {item['text']}  _({item['source']})_",
+                "wrap": True,
+                "spacing": "None",
+            }
+        )
 
     body = [
         {
@@ -129,39 +135,87 @@ def render_adaptive_card(digest: DigestData, title_prefix: str = "reMark") -> di
         },
     ]
     if action_blocks:
-        body.append({
-            "type": "TextBlock",
-            "text": "Open action items",
-            "weight": "Bolder",
-            "spacing": "Medium",
-        })
+        body.append(
+            {
+                "type": "TextBlock",
+                "text": "Open action items",
+                "weight": "Bolder",
+                "spacing": "Medium",
+            }
+        )
         body.extend(action_blocks)
 
     card = {
         "type": "message",
-        "attachments": [{
-            "contentType": "application/vnd.microsoft.card.adaptive",
-            "contentUrl": None,
-            "content": {
-                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                "type": "AdaptiveCard",
-                "version": "1.4",
-                "body": body,
-            },
-        }],
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "contentUrl": None,
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": body,
+                },
+            }
+        ],
     }
     return card
 
 
-async def post_digest(config: TeamsConfig, digest: DigestData) -> bool:
+async def send_card(
+    webhook_url: str,
+    card: dict,
+    *,
+    http_pool: SharedHttpPool | None = None,
+) -> bool:
+    """POST an Adaptive Card payload to a Teams webhook URL.
+
+    When the caller provides ``http_pool`` the request reuses an existing
+    keep-alive connection instead of paying the TLS handshake on every
+    dispatch. The fallback (no pool) keeps backward compatibility for
+    callers that aren't pool-aware yet.
+    """
+    try:
+        if http_pool is not None:
+            client = await http_pool.client()
+            resp = await client.post(webhook_url, json=card)
+        else:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(
+                    webhook_url,
+                    content=json.dumps(card),
+                    headers={"Content-Type": "application/json"},
+                )
+        resp.raise_for_status()
+        return resp.status_code < 300
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            "Teams webhook returned %d: %s",
+            e.response.status_code,
+            e.response.text[:200],
+        )
+        return False
+    except httpx.TransportError as e:
+        logger.warning("Teams webhook failed: %s", e)
+        return False
+
+
+async def post_digest(
+    config: TeamsConfig,
+    digest: DigestData,
+    *,
+    http_pool: SharedHttpPool | None = None,
+) -> bool:
     """Post a digest card to the configured Teams webhook."""
     if not config.enabled or not config.webhook_url:
         return False
 
     card = render_adaptive_card(digest)
 
-    async with httpx.AsyncClient(timeout=20) as client:
-        try:
+    try:
+        if http_pool is not None:
+            client = await http_pool.client()
             resp = await client.post(
                 config.webhook_url,
                 content=json.dumps(card),
@@ -170,18 +224,38 @@ async def post_digest(config: TeamsConfig, digest: DigestData) -> bool:
             if resp.status_code >= 400:
                 logger.warning(
                     "Teams webhook returned %d: %s",
-                    resp.status_code, resp.text[:200],
+                    resp.status_code,
+                    resp.text[:200],
                 )
                 return False
             return True
-        except httpx.TransportError as e:
-            logger.warning("Teams webhook failed: %s", e)
-            return False
+        async with httpx.AsyncClient(timeout=20) as client:
+            try:
+                resp = await client.post(
+                    config.webhook_url,
+                    content=json.dumps(card),
+                    headers={"Content-Type": "application/json"},
+                )
+                if resp.status_code >= 400:
+                    logger.warning(
+                        "Teams webhook returned %d: %s",
+                        resp.status_code,
+                        resp.text[:200],
+                    )
+                    return False
+                return True
+            except httpx.TransportError as e:
+                logger.warning("Teams webhook failed: %s", e)
+                return False
+    except httpx.TransportError as e:
+        logger.warning("Teams webhook failed: %s", e)
+        return False
 
 
 @dataclass
 class MeetingMatch:
     """A correlation between an Outlook meeting and a vault note."""
+
     subject: str
     start: str
     note_path: str
@@ -232,12 +306,14 @@ async def correlate_meetings(
         lowered = subject.lower()
         for title, note_path in note_index.items():
             if title in lowered or lowered in title:
-                matches.append(MeetingMatch(
-                    subject=subject,
-                    start=start_dt,
-                    note_path=str(note_path),
-                    note_title=title,
-                ))
+                matches.append(
+                    MeetingMatch(
+                        subject=subject,
+                        start=start_dt,
+                        note_path=str(note_path),
+                        note_title=title,
+                    )
+                )
                 break
 
     return matches

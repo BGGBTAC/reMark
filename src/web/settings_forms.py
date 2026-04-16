@@ -37,12 +37,12 @@ from src.web.config_writer import MASK, is_secret_field
 class FormField:
     """Rendering instructions for a single field in a settings form."""
 
-    name: str              # dotted path, e.g. "git.auto_push"
-    label: str             # human label derived from the field name
-    kind: str              # "text" | "password" | "number" | "bool"
-                           # | "select" | "textarea" | "json"
-    value: Any             # current value (possibly masked for secrets)
-    help: str = ""         # from Pydantic field description
+    name: str  # dotted path, e.g. "git.auto_push"
+    label: str  # human label derived from the field name
+    kind: str  # "text" | "password" | "number" | "bool"
+    # | "select" | "textarea" | "json"
+    value: Any  # current value (possibly masked for secrets)
+    help: str = ""  # from Pydantic field description
     choices: list[str] = field(default_factory=list)  # for select
     is_secret: bool = False
 
@@ -87,7 +87,8 @@ def build_form(
         nested_cls = _nested_model(annotation)
         if nested_cls is not None:
             sub = build_form(
-                nested_cls, current or {},
+                nested_cls,
+                current or {},
                 path_prefix=f"{dotted}.",
                 title=label,
             )
@@ -113,15 +114,17 @@ def build_form(
         else:
             display_value = current
 
-        group.fields.append(FormField(
-            name=dotted,
-            label=label,
-            kind="password" if secret else kind,
-            value=display_value,
-            help=help_text,
-            choices=choices,
-            is_secret=secret,
-        ))
+        group.fields.append(
+            FormField(
+                name=dotted,
+                label=label,
+                kind="password" if secret else kind,
+                value=display_value,
+                help=help_text,
+                choices=choices,
+                is_secret=secret,
+            )
+        )
 
     return group
 
@@ -252,9 +255,7 @@ def _coerce(kind: str, raw: Any, annotation: Any) -> Any:
         if isinstance(raw, list):
             items = [line for line in raw if line]
         else:
-            items = [
-                line.strip() for line in str(raw).splitlines() if line.strip()
-            ]
+            items = [line.strip() for line in str(raw).splitlines() if line.strip()]
         # Honour the inner type when the annotation is e.g. list[int].
         inner_args = get_args(annotation)
         inner = inner_args[0] if inner_args else str

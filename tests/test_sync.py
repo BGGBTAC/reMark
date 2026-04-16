@@ -4,12 +4,39 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.llm.client import LLMClient, LLMResponse
 from src.sync.scheduler import _parse_interval
 from src.sync.state import SyncState
+
+
+class _StubLLM(LLMClient):
+    """Minimal LLMClient that returns canned responses for testing."""
+
+    provider = "stub"
+
+    async def complete(self, system, messages, model, max_tokens=4096):
+        return LLMResponse(
+            text="# New Note\n\nTest content",
+            input_tokens=1,
+            output_tokens=1,
+            provider=self.provider,
+            model=model,
+        )
+
+    async def complete_vision(self, system, image, prompt, model, max_tokens=2048):
+        return LLMResponse(
+            text="stub ocr text",
+            input_tokens=1,
+            output_tokens=1,
+            provider=self.provider,
+            model=model,
+        )
+
 
 # =====================
 # SyncState
 # =====================
+
 
 class TestSyncState:
     def test_init_creates_tables(self, tmp_path):
@@ -31,10 +58,14 @@ class TestSyncState:
         state = SyncState(tmp_path / "test.db")
 
         state.mark_synced(
-            doc_id="doc-1", doc_name="Note",
-            parent_folder="Work", cloud_hash="hash-abc",
-            vault_path="/vault/note.md", ocr_engine="crdt",
-            page_count=3, action_count=1,
+            doc_id="doc-1",
+            doc_name="Note",
+            parent_folder="Work",
+            cloud_hash="hash-abc",
+            vault_path="/vault/note.md",
+            ocr_engine="crdt",
+            page_count=3,
+            action_count=1,
         )
 
         assert state.needs_sync("doc-1", "hash-abc") is False
@@ -44,10 +75,14 @@ class TestSyncState:
         state = SyncState(tmp_path / "test.db")
 
         state.mark_synced(
-            doc_id="doc-1", doc_name="Note",
-            parent_folder="Work", cloud_hash="hash-old",
-            vault_path="/vault/note.md", ocr_engine="crdt",
-            page_count=3, action_count=1,
+            doc_id="doc-1",
+            doc_name="Note",
+            parent_folder="Work",
+            cloud_hash="hash-old",
+            vault_path="/vault/note.md",
+            ocr_engine="crdt",
+            page_count=3,
+            action_count=1,
         )
 
         assert state.needs_sync("doc-1", "hash-new") is True
@@ -57,10 +92,14 @@ class TestSyncState:
         state = SyncState(tmp_path / "test.db")
 
         state.mark_synced(
-            doc_id="doc-1", doc_name="Note",
-            parent_folder="Work", cloud_hash="hash-abc",
-            vault_path="/vault/note.md", ocr_engine="crdt",
-            page_count=3, action_count=0,
+            doc_id="doc-1",
+            doc_name="Note",
+            parent_folder="Work",
+            cloud_hash="hash-abc",
+            vault_path="/vault/note.md",
+            ocr_engine="crdt",
+            page_count=3,
+            action_count=0,
         )
         state.mark_error("doc-1", "something broke")
 
@@ -73,10 +112,14 @@ class TestSyncState:
 
         for i in range(3):
             state.mark_synced(
-                doc_id="doc-1", doc_name="Note",
-                parent_folder="Work", cloud_hash=f"hash-{i}",
-                vault_path="/vault/note.md", ocr_engine="crdt",
-                page_count=1, action_count=0,
+                doc_id="doc-1",
+                doc_name="Note",
+                parent_folder="Work",
+                cloud_hash=f"hash-{i}",
+                vault_path="/vault/note.md",
+                ocr_engine="crdt",
+                page_count=1,
+                action_count=0,
             )
 
         doc = state.get_doc_state("doc-1")
@@ -94,16 +137,24 @@ class TestSyncState:
         state = SyncState(tmp_path / "test.db")
 
         state.mark_synced(
-            doc_id="doc-1", doc_name="Note 1",
-            parent_folder="", cloud_hash="h1",
-            vault_path="/v/n1.md", ocr_engine="crdt",
-            page_count=1, action_count=0,
+            doc_id="doc-1",
+            doc_name="Note 1",
+            parent_folder="",
+            cloud_hash="h1",
+            vault_path="/v/n1.md",
+            ocr_engine="crdt",
+            page_count=1,
+            action_count=0,
         )
         state.mark_synced(
-            doc_id="doc-2", doc_name="Note 2",
-            parent_folder="", cloud_hash="h2",
-            vault_path="/v/n2.md", ocr_engine="crdt",
-            page_count=1, action_count=0,
+            doc_id="doc-2",
+            doc_name="Note 2",
+            parent_folder="",
+            cloud_hash="h2",
+            vault_path="/v/n2.md",
+            ocr_engine="crdt",
+            page_count=1,
+            action_count=0,
         )
 
         # Mark one as pending
@@ -122,14 +173,24 @@ class TestSyncState:
         state = SyncState(tmp_path / "test.db")
 
         state.mark_synced(
-            doc_id="d1", doc_name="A", parent_folder="",
-            cloud_hash="h1", vault_path="", ocr_engine="crdt",
-            page_count=5, action_count=3,
+            doc_id="d1",
+            doc_name="A",
+            parent_folder="",
+            cloud_hash="h1",
+            vault_path="",
+            ocr_engine="crdt",
+            page_count=5,
+            action_count=3,
         )
         state.mark_synced(
-            doc_id="d2", doc_name="B", parent_folder="",
-            cloud_hash="h2", vault_path="", ocr_engine="google_vision",
-            page_count=2, action_count=1,
+            doc_id="d2",
+            doc_name="B",
+            parent_folder="",
+            cloud_hash="h2",
+            vault_path="",
+            ocr_engine="google_vision",
+            page_count=2,
+            action_count=1,
         )
         state.mark_error("d3", "failed")
 
@@ -146,9 +207,14 @@ class TestSyncState:
         state = SyncState(tmp_path / "test.db")
 
         state.mark_synced(
-            doc_id="d1", doc_name="Note", parent_folder="",
-            cloud_hash="h1", vault_path="", ocr_engine="crdt",
-            page_count=1, action_count=0,
+            doc_id="d1",
+            doc_name="Note",
+            parent_folder="",
+            cloud_hash="h1",
+            vault_path="",
+            ocr_engine="crdt",
+            page_count=1,
+            action_count=0,
         )
         state.mark_error("d2", "broke")
 
@@ -168,8 +234,47 @@ class TestSyncState:
 
 
 # =====================
+# _cache_rm_bytes helper
+# =====================
+
+
+class TestCacheRmBytes:
+    def test_writes_bytes_to_expected_path(self, tmp_path, monkeypatch):
+        import src.sync.engine as engine_mod
+
+        monkeypatch.setattr(engine_mod, "_RM_CACHE_ROOT", tmp_path / "cache")
+
+        engine_mod._cache_rm_bytes("abc123", b"fake rm content")
+
+        cached = (tmp_path / "cache" / "abc123" / "last.rm").read_bytes()
+        assert cached == b"fake rm content"
+
+    def test_overwrites_on_second_call(self, tmp_path, monkeypatch):
+        import src.sync.engine as engine_mod
+
+        monkeypatch.setattr(engine_mod, "_RM_CACHE_ROOT", tmp_path / "cache")
+
+        engine_mod._cache_rm_bytes("doc-x", b"first")
+        engine_mod._cache_rm_bytes("doc-x", b"second")
+
+        cached = (tmp_path / "cache" / "doc-x" / "last.rm").read_bytes()
+        assert cached == b"second"
+
+    def test_creates_parent_dirs(self, tmp_path, monkeypatch):
+        import src.sync.engine as engine_mod
+
+        deeply_nested = tmp_path / "a" / "b" / "c"
+        monkeypatch.setattr(engine_mod, "_RM_CACHE_ROOT", deeply_nested)
+
+        engine_mod._cache_rm_bytes("d1", b"\x00\x01\x02")
+
+        assert (deeply_nested / "d1" / "last.rm").exists()
+
+
+# =====================
 # SyncEngine
 # =====================
+
 
 class TestSyncEngine:
     @pytest.mark.asyncio
@@ -187,22 +292,32 @@ class TestSyncEngine:
 
         # Pre-mark a doc as synced
         engine.state.mark_synced(
-            doc_id="doc-1", doc_name="Old Note",
-            parent_folder="Work", cloud_hash="same-hash",
-            vault_path="", ocr_engine="crdt",
-            page_count=1, action_count=0,
+            doc_id="doc-1",
+            doc_name="Old Note",
+            parent_folder="Work",
+            cloud_hash="same-hash",
+            vault_path="",
+            ocr_engine="crdt",
+            page_count=1,
+            action_count=0,
         )
 
         # Mock cloud to return that same doc
         cloud = AsyncMock()
         doc_manager = AsyncMock()
-        doc_manager.list_documents = AsyncMock(return_value=[
-            DocumentMetadata(
-                id="doc-1", name="Old Note", parent="f1",
-                doc_type="DocumentType", version=1,
-                hash="same-hash", modified="",
-            ),
-        ])
+        doc_manager.list_documents = AsyncMock(
+            return_value=[
+                DocumentMetadata(
+                    id="doc-1",
+                    name="Old Note",
+                    parent="f1",
+                    doc_type="DocumentType",
+                    version=1,
+                    hash="same-hash",
+                    modified="",
+                ),
+            ]
+        )
 
         ocr_pipeline = AsyncMock()
 
@@ -232,9 +347,13 @@ class TestSyncEngine:
         engine = SyncEngine(config)
 
         new_doc = DocumentMetadata(
-            id="doc-new", name="New Note", parent="",
-            doc_type="DocumentType", version=1,
-            hash="new-hash", modified="2026-04-13",
+            id="doc-new",
+            name="New Note",
+            parent="",
+            doc_type="DocumentType",
+            version=1,
+            hash="new-hash",
+            modified="2026-04-13",
         )
 
         # Mock doc_manager
@@ -256,23 +375,21 @@ class TestSyncEngine:
 
         # Mock OCR pipeline
         ocr_pipeline = AsyncMock()
-        ocr_pipeline.recognize = AsyncMock(return_value=[
-            PageText(page_id="p1", text="Test content", confidence=1.0, engine_used="crdt"),
-        ])
+        ocr_pipeline.recognize = AsyncMock(
+            return_value=[
+                PageText(page_id="p1", text="Test content", confidence=1.0, engine_used="crdt"),
+            ]
+        )
 
         cloud = AsyncMock()
 
-        # Mock anthropic calls
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="# New Note\n\nTest content")]
-
-        with patch("src.sync.engine.parse_notebook", return_value=[
-            PageContent(page_id="p1", text_blocks=[TextBlock(text="Test")])
-        ]), patch("src.sync.engine.anthropic.AsyncAnthropic") as mock_anthropic:
-            mock_client = AsyncMock()
-            mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_anthropic.return_value = mock_client
-
+        with (
+            patch(
+                "src.sync.engine.parse_notebook",
+                return_value=[PageContent(page_id="p1", text_blocks=[TextBlock(text="Test")])],
+            ),
+            patch("src.sync.engine.build_llm_client", return_value=_StubLLM()),
+        ):
             report = await engine.sync_once(cloud, doc_manager, ocr_pipeline)
 
         assert report.success_count == 1
@@ -285,6 +402,7 @@ class TestSyncEngine:
 # =====================
 # _parse_interval
 # =====================
+
 
 class TestParseInterval:
     def test_every_n_minutes(self):

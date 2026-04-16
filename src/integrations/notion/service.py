@@ -72,7 +72,9 @@ class NotionService:
 
         try:
             page_id = await self._get_client().create_page(
-                parent_page_id=parent, title=title, blocks=blocks,
+                parent_page_id=parent,
+                title=title,
+                blocks=blocks,
             )
         except NotionError as exc:
             logger.warning("Notion push failed for %s: %s", title, exc)
@@ -80,7 +82,9 @@ class NotionService:
 
         logger.info(
             "Notion: wrote page '%s' (%d blocks) under %s",
-            title, len(blocks), parent,
+            title,
+            len(blocks),
+            parent,
         )
         return NotionPushResult(page_id=page_id, blocks_written=len(blocks))
 

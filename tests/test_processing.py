@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.llm.client import LLMClient, LLMResponse
 from src.processing.actions import (
     ActionExtractor,
     ActionItem,
@@ -16,7 +17,32 @@ from src.processing.structurer import NoteStructurer, StructuredNote, _extract_t
 from src.processing.summarizer import NoteSummarizer, NoteSummary, _fallback_summary
 from src.processing.tagger import NoteTagger, _extract_keyword_tags, _parse_tag_response
 
-# -- Helper to mock Anthropic client --
+
+class _StubLLM(LLMClient):
+    """Test helper — records complete() calls and returns canned text."""
+
+    provider = "stub"
+
+    def __init__(self, text: str = ""):
+        self._text = text
+        self.calls: list = []
+
+    async def complete(self, system, messages, model, max_tokens=4096):
+        self.calls.append((system, messages, model, max_tokens))
+        return LLMResponse(
+            text=self._text,
+            input_tokens=1,
+            output_tokens=1,
+            provider=self.provider,
+            model=model,
+        )
+
+    async def complete_vision(self, system, image, prompt, model, max_tokens=2048):
+        raise NotImplementedError
+
+
+# -- Helper to mock Anthropic client (used by actions, tagger, summarizer tests) --
+
 
 def mock_anthropic_response(text: str) -> AsyncMock:
     """Create a mock Anthropic client that returns the given text."""
@@ -31,11 +57,12 @@ def mock_anthropic_response(text: str) -> AsyncMock:
 # NoteStructurer
 # =====================
 
+
 class TestNoteStructurer:
     @pytest.mark.asyncio
     async def test_structure_returns_result(self):
-        client = mock_anthropic_response("# Meeting Notes\n\nDiscussed project timeline.")
-        structurer = NoteStructurer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="# Meeting Notes\n\nDiscussed project timeline.")
+        structurer = NoteStructurer(llm=llm, model="claude-sonnet-4-20250514")
 
         result = await structurer.structure(
             "meeting notes discussed project timeline",
@@ -48,8 +75,8 @@ class TestNoteStructurer:
 
     @pytest.mark.asyncio
     async def test_structure_empty_text(self):
-        client = mock_anthropic_response("")
-        structurer = NoteStructurer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="")
+        structurer = NoteStructurer(llm=llm, model="claude-sonnet-4-20250514")
 
         result = await structurer.structure("", "Empty Notebook")
 
@@ -58,21 +85,33 @@ class TestNoteStructurer:
 
     @pytest.mark.asyncio
     async def test_structure_incremental_empty_new(self):
-        client = mock_anthropic_response("")
-        structurer = NoteStructurer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="")
+        structurer = NoteStructurer(llm=llm, model="claude-sonnet-4-20250514")
 
         result = await structurer.structure_incremental("Existing content", "")
         assert result == "Existing content"
 
     @pytest.mark.asyncio
     async def test_structure_uses_correct_model(self):
-        client = mock_anthropic_response("# Title\n\nContent")
-        structurer = NoteStructurer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="# Title\n\nContent")
+        structurer = NoteStructurer(llm=llm, model="claude-sonnet-4-20250514")
 
         await structurer.structure("some text", "Test")
 
-        call_args = client.messages.create.call_args
-        assert call_args.kwargs["model"] == "claude-sonnet-4-20250514"
+        assert llm.calls
+        # third element of the recorded tuple is model
+        assert llm.calls[0][2] == "claude-sonnet-4-20250514"
+
+    @pytest.mark.asyncio
+    async def test_structurer_uses_llm_client(self):
+        llm = _StubLLM(text="# Title\n\nBody")
+        structurer = NoteStructurer(llm=llm, model="llama3.1")
+
+        out = await structurer.structure("handwritten text here", "My Notebook")
+
+        assert "Title" in out.content_md or "Body" in out.content_md
+        assert llm.calls
+        assert llm.calls[0][2] == "llama3.1"  # model forwarded correctly
 
 
 class TestExtractTitle:
@@ -92,6 +131,7 @@ class TestExtractTitle:
 # =====================
 # ActionExtractor
 # =====================
+
 
 class TestExtractByPattern:
     def test_todo_pattern(self):
@@ -147,10 +187,12 @@ class TestExtractByPattern:
 
 class TestParseActionResponse:
     def test_valid_json(self):
-        raw = json.dumps([
-            {"task": "Send report", "type": "task", "priority": "high"},
-            {"task": "Check budget", "type": "followup", "assignee": "Alice"},
-        ])
+        raw = json.dumps(
+            [
+                {"task": "Send report", "type": "task", "priority": "high"},
+                {"task": "Check budget", "type": "followup", "assignee": "Alice"},
+            ]
+        )
         actions = _parse_action_response(raw)
         assert len(actions) == 2
         assert actions[0].task == "Send report"
@@ -204,11 +246,13 @@ class TestMergeActions:
 class TestActionExtractor:
     @pytest.mark.asyncio
     async def test_extract_combines_sources(self):
-        api_response = json.dumps([
-            {"task": "Review architecture", "type": "task", "priority": "high"},
-        ])
-        client = mock_anthropic_response(api_response)
-        extractor = ActionExtractor(client, "claude-sonnet-4-20250514")
+        api_response = json.dumps(
+            [
+                {"task": "Review architecture", "type": "task", "priority": "high"},
+            ]
+        )
+        llm = _StubLLM(text=api_response)
+        extractor = ActionExtractor(llm, "claude-sonnet-4-20250514")
 
         actions = await extractor.extract("TODO: fix the tests\nReview architecture for v2")
 
@@ -219,16 +263,34 @@ class TestActionExtractor:
 
     @pytest.mark.asyncio
     async def test_extract_empty_text(self):
-        client = mock_anthropic_response("[]")
-        extractor = ActionExtractor(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="[]")
+        extractor = ActionExtractor(llm, "claude-sonnet-4-20250514")
 
         actions = await extractor.extract("")
         assert len(actions) == 0
+
+    @pytest.mark.asyncio
+    async def test_action_extractor_uses_llm_client(self):
+        api_response = json.dumps(
+            [
+                {"task": "Deploy to prod", "type": "task", "priority": "high"},
+            ]
+        )
+        llm = _StubLLM(text=api_response)
+        extractor = ActionExtractor(llm, "llama3.1")
+
+        actions = await extractor.extract("ACTION: Deploy to prod by EOD")
+
+        tasks = [a.task for a in actions]
+        assert "Deploy to prod" in tasks
+        assert llm.calls
+        assert llm.calls[0][2] == "llama3.1"  # model forwarded correctly
 
 
 # =====================
 # NoteTagger
 # =====================
+
 
 class TestExtractKeywordTags:
     def test_meeting_detected(self):
@@ -248,9 +310,7 @@ class TestExtractKeywordTags:
         assert len(tags) == 0
 
     def test_multiple_tags(self):
-        tags = _extract_keyword_tags(
-            "Meeting about the API deployment timeline for next sprint"
-        )
+        tags = _extract_keyword_tags("Meeting about the API deployment timeline for next sprint")
         assert "meeting" in tags
         assert "technical" in tags
         assert "planning" in tags
@@ -273,8 +333,8 @@ class TestParseTagResponse:
 class TestNoteTagger:
     @pytest.mark.asyncio
     async def test_tag_merges_sources(self):
-        client = mock_anthropic_response('["backend", "performance"]')
-        tagger = NoteTagger(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text='["backend", "performance"]')
+        tagger = NoteTagger(llm, "claude-sonnet-4-20250514")
 
         tags = await tagger.tag("Meeting about the API performance issues")
 
@@ -285,16 +345,16 @@ class TestNoteTagger:
 
     @pytest.mark.asyncio
     async def test_tag_empty_text(self):
-        client = mock_anthropic_response("[]")
-        tagger = NoteTagger(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="[]")
+        tagger = NoteTagger(llm, "claude-sonnet-4-20250514")
 
         tags = await tagger.tag("")
         assert tags == []
 
     @pytest.mark.asyncio
     async def test_tag_deduplicates(self):
-        client = mock_anthropic_response('["meeting", "planning"]')
-        tagger = NoteTagger(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text='["meeting", "planning"]')
+        tagger = NoteTagger(llm, "claude-sonnet-4-20250514")
 
         tags = await tagger.tag("Meeting about sprint planning and timeline")
         # "meeting" and "planning" come from both keyword and API
@@ -308,16 +368,15 @@ class TestNoteTagger:
             TAGGING_PROMPT,
         )
 
-        client = mock_anthropic_response(
-            '["project/remark/search", "technical/python/fastapi"]'
-        )
-        tagger = NoteTagger(
-            client, "claude-sonnet-4-20250514", hierarchical=True,
-        )
+        llm = _StubLLM(text='["project/remark/search", "technical/python/fastapi"]')
+        tagger = NoteTagger(llm, "claude-sonnet-4-20250514", hierarchical=True)
         tags = await tagger.tag("Notes on the FastAPI search layer")
-        call = client.messages.create.call_args
-        assert call.kwargs["system"] == HIERARCHICAL_TAGGING_PROMPT
-        assert call.kwargs["system"] != TAGGING_PROMPT
+
+        # The system prompt forwarded to the LLM must be the hierarchical one
+        assert llm.calls
+        recorded_system = llm.calls[0][0]
+        assert recorded_system == HIERARCHICAL_TAGGING_PROMPT
+        assert recorded_system != TAGGING_PROMPT
         # Hierarchical tags must make it through the merge unchanged
         assert "project/remark/search" in tags
         assert "technical/python/fastapi" in tags
@@ -326,26 +385,41 @@ class TestNoteTagger:
     async def test_flat_mode_keeps_flat_prompt(self):
         from src.processing.tagger import TAGGING_PROMPT
 
-        client = mock_anthropic_response('["flat-tag"]')
-        tagger = NoteTagger(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text='["flat-tag"]')
+        tagger = NoteTagger(llm, "claude-sonnet-4-20250514")
         await tagger.tag("some text")
-        assert client.messages.create.call_args.kwargs["system"] == TAGGING_PROMPT
+        assert llm.calls[0][0] == TAGGING_PROMPT
+
+    @pytest.mark.asyncio
+    async def test_tagger_uses_llm_client(self):
+        llm = _StubLLM(text='["foo", "bar"]')
+        tagger = NoteTagger(llm, "llama3.1")
+
+        tags = await tagger.tag("some note text")
+
+        assert "foo" in tags
+        assert "bar" in tags
+        assert llm.calls
+        assert llm.calls[0][2] == "llama3.1"  # model forwarded correctly
 
 
 # =====================
 # NoteSummarizer
 # =====================
 
+
 class TestNoteSummarizer:
     @pytest.mark.asyncio
     async def test_summarize_returns_result(self):
-        response = json.dumps({
-            "one_line": "Team discussed Q2 OKRs",
-            "key_points": ["Revenue target set", "Hiring plan approved"],
-            "topics": ["okrs", "hiring"],
-        })
-        client = mock_anthropic_response(response)
-        summarizer = NoteSummarizer(client, "claude-sonnet-4-20250514")
+        response = json.dumps(
+            {
+                "one_line": "Team discussed Q2 OKRs",
+                "key_points": ["Revenue target set", "Hiring plan approved"],
+                "topics": ["okrs", "hiring"],
+            }
+        )
+        llm = _StubLLM(text=response)
+        summarizer = NoteSummarizer(llm, "claude-sonnet-4-20250514")
 
         result = await summarizer.summarize("Long meeting notes...", "Q2 Planning")
 
@@ -356,11 +430,22 @@ class TestNoteSummarizer:
 
     @pytest.mark.asyncio
     async def test_summarize_empty_text(self):
-        client = mock_anthropic_response("")
-        summarizer = NoteSummarizer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="")
+        summarizer = NoteSummarizer(llm, "claude-sonnet-4-20250514")
 
         result = await summarizer.summarize("", "Empty Note")
         assert "Empty" in result.one_line
+
+    @pytest.mark.asyncio
+    async def test_summarizer_uses_llm_client(self):
+        llm = _StubLLM(text="short summary")
+        summarizer = NoteSummarizer(llm, "llama3.1")
+
+        result = await summarizer.summarize("some note content", "Test")
+
+        assert result.one_line == "short summary"
+        assert llm.calls
+        assert llm.calls[0][2] == "llama3.1"  # model forwarded correctly
 
 
 class TestFallbackSummary:

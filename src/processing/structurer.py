@@ -1,6 +1,6 @@
 """Transform raw OCR text into structured Markdown.
 
-Uses the Anthropic API to clean up, structure, and format
+Uses the configured LLM to clean up, structure, and format
 handwritten notes into well-organized Markdown.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-import anthropic
+from src.llm.client import LLMClient, LLMMessage
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +52,10 @@ class StructuredNote:
 
 
 class NoteStructurer:
-    """Transforms raw OCR text into structured Markdown via the Anthropic API."""
+    """Transforms raw OCR text into structured Markdown via the configured LLM."""
 
-    def __init__(self, client: anthropic.AsyncAnthropic, model: str):
-        self._client = client
+    def __init__(self, llm: LLMClient, model: str):
+        self._llm = llm
         self._model = model
 
     async def structure(
@@ -82,17 +82,14 @@ class NoteStructurer:
         if page_numbers:
             context += f"\nPages: {', '.join(str(p) for p in page_numbers)}"
 
-        response = await self._client.messages.create(
+        response = await self._llm.complete(
+            system=STRUCTURE_PROMPT,
+            messages=[LLMMessage(role="user", content=f"{context}\n\n---\n\n{raw_text}")],
             model=self._model,
             max_tokens=4096,
-            system=STRUCTURE_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": f"{context}\n\n---\n\n{raw_text}",
-            }],
         )
 
-        content_md = response.content[0].text.strip()
+        content_md = response.text.strip()
 
         # Infer title from first heading or notebook name
         title = _extract_title(content_md) or notebook_name
@@ -118,20 +115,19 @@ class NoteStructurer:
             result = await self.structure(new_pages, "Untitled")
             return result.content_md
 
-        response = await self._client.messages.create(
+        response = await self._llm.complete(
+            system=INCREMENTAL_PROMPT,
+            messages=[
+                LLMMessage(
+                    role="user",
+                    content=f"## Existing Note\n\n{existing}\n\n## New Content\n\n{new_pages}",
+                )
+            ],
             model=self._model,
             max_tokens=8192,
-            system=INCREMENTAL_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"## Existing Note\n\n{existing}\n\n"
-                    f"## New Content\n\n{new_pages}"
-                ),
-            }],
         )
 
-        return response.content[0].text.strip()
+        return response.text.strip()
 
     async def _detect_language(self, text: str) -> str:
         """Quick language detection from text content."""

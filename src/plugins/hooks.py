@@ -15,6 +15,7 @@ from typing import Any
 @dataclass
 class PluginMetadata:
     """Identity data every plugin must provide."""
+
     name: str
     version: str = "0.0.1"
     description: str = ""
@@ -26,8 +27,7 @@ class Plugin(ABC):
 
     @property
     @abstractmethod
-    def metadata(self) -> PluginMetadata:
-        ...
+    def metadata(self) -> PluginMetadata: ...
 
     def configure(self, settings: dict[str, Any]) -> None:  # noqa: B027
         """Receive plugin-specific config from config.plugins.settings[name].

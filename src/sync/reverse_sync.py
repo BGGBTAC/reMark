@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ReverseResult:
     """Outcome of a reverse-sync pass."""
+
     pushed: list[str] = field(default_factory=list)
     failed: list[tuple[str, str]] = field(default_factory=list)  # (path, error)
 
@@ -116,19 +117,24 @@ class ReverseSyncer:
 
             except Exception as e:
                 logger.warning(
-                    "Reverse-push failed for %s: %s", note_path.name, e,
+                    "Reverse-push failed for %s: %s",
+                    note_path.name,
+                    e,
                 )
                 result.failed.append((str(note_path), str(e)))
                 self._state.mark_reverse_failed(str(note_path), str(e))
 
         logger.info(
             "Reverse-sync complete: %d pushed, %d failed",
-            len(result.pushed), len(result.failed),
+            len(result.pushed),
+            len(result.failed),
         )
         return result
 
     async def push_single(
-        self, note_path: Path, cloud: RemarkableCloud,
+        self,
+        note_path: Path,
+        cloud: RemarkableCloud,
     ) -> str | None:
         """Push a single note on demand (used by CLI / dashboard)."""
         uploader = ResponseUploader(cloud, response_folder=self._config.target_folder)
@@ -146,7 +152,9 @@ class ReverseSyncer:
             return None
 
     async def _push_note(
-        self, note_path: Path, uploader: ResponseUploader,
+        self,
+        note_path: Path,
+        uploader: ResponseUploader,
     ) -> str:
         """Render a note to the configured format and upload."""
         result = self._vault.read_note(note_path)

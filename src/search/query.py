@@ -106,7 +106,10 @@ class SearchQuery:
 
         logger.info(
             "Query '%s...' returned %d hits (mode=%s, backend=%s)",
-            query[:40], len(hits), mode, self._backend.name,
+            query[:40],
+            len(hits),
+            mode,
+            self._backend.name,
         )
 
         answer = ""
@@ -116,7 +119,10 @@ class SearchQuery:
         return QueryResult(query=query, hits=hits, answer=answer)
 
     async def _semantic(
-        self, query: str, top_k: int, min_score: float,
+        self,
+        query: str,
+        top_k: int,
+        min_score: float,
     ) -> list[SearchHit]:
         query_vectors = await self._backend.embed([query])
         if not query_vectors:
@@ -128,7 +134,10 @@ class SearchQuery:
         )
 
     async def _hybrid(
-        self, query: str, top_k: int, min_score: float,
+        self,
+        query: str,
+        top_k: int,
+        min_score: float,
     ) -> list[SearchHit]:
         """Reciprocal Rank Fusion of semantic + BM25.
 
@@ -159,12 +168,11 @@ class SearchQuery:
         # Respect min_score on the semantic-leg only: if a chunk came
         # purely from BM25, we keep it; if it came from both, it
         # already passed the semantic gate.
-        semantic_passed = {
-            h.chunk_id for h in semantic_hits if h.score >= min_score
-        }
+        semantic_passed = {h.chunk_id for h in semantic_hits if h.score >= min_score}
         bm25_ids = {h.chunk_id for h in bm25_hits}
         filtered = [
-            hit for (hit, _score) in ordered
+            hit
+            for (hit, _score) in ordered
             if hit.chunk_id in semantic_passed or hit.chunk_id in bm25_ids
         ]
         return filtered[:top_k]

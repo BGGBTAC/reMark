@@ -65,8 +65,8 @@ def bootstrap_admin(state: SyncState) -> str | None:
         return None
     if env_pw:
         logger.info(
-            "Bootstrapped admin user from REMARK_ADMIN_PASSWORD "
-            "(user_id=%d)", created,
+            "Bootstrapped admin user from REMARK_ADMIN_PASSWORD (user_id=%d)",
+            created,
         )
         return None  # operator already knows the password
     logger.warning(
@@ -78,7 +78,9 @@ def bootstrap_admin(state: SyncState) -> str | None:
 
 
 def authenticate(
-    state: SyncState, username: str, password: str,
+    state: SyncState,
+    username: str,
+    password: str,
 ) -> dict[str, Any] | None:
     """Verify credentials against the users table.
 
@@ -133,6 +135,11 @@ def require_admin(request: Request) -> dict[str, Any]:
 
 
 __all__ = [
-    "hash_password", "verify_password", "authenticate",
-    "bootstrap_admin", "current_user", "require_user", "require_admin",
+    "hash_password",
+    "verify_password",
+    "authenticate",
+    "bootstrap_admin",
+    "current_user",
+    "require_user",
+    "require_admin",
 ]

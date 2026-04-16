@@ -11,8 +11,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-import anthropic
-
+from src.llm.client import LLMClient, LLMMessage
 from src.remarkable.formats import StrokeGroup
 
 logger = logging.getLogger(__name__)
@@ -56,8 +55,8 @@ class ActionItem:
 class ActionExtractor:
     """Extract action items from notes using text patterns and the Anthropic API."""
 
-    def __init__(self, client: anthropic.AsyncAnthropic, model: str):
-        self._client = client
+    def __init__(self, llm: LLMClient, model: str):
+        self._llm = llm
         self._model = model
 
     async def extract(
@@ -89,7 +88,10 @@ class ActionExtractor:
 
         logger.info(
             "Extracted %d actions (API: %d, pattern: %d, color: %d)",
-            len(all_actions), len(api_actions), len(pattern_actions), len(color_actions),
+            len(all_actions),
+            len(api_actions),
+            len(pattern_actions),
+            len(color_actions),
         )
 
         return all_actions
@@ -107,15 +109,14 @@ class ActionExtractor:
             user_content += f"\n\n--- Color Annotations ---\n{annotation_summary}"
 
         try:
-            response = await self._client.messages.create(
+            response = await self._llm.complete(
+                system=EXTRACTION_PROMPT,
+                messages=[LLMMessage(role="user", content=user_content)],
                 model=self._model,
                 max_tokens=4096,
-                system=EXTRACTION_PROMPT,
-                messages=[{"role": "user", "content": user_content}],
             )
 
-            raw = response.content[0].text.strip()
-            return _parse_action_response(raw)
+            return _parse_action_response(response.text.strip())
 
         except Exception as e:
             logger.warning("API action extraction failed: %s", e)
@@ -133,52 +134,62 @@ def _extract_by_pattern(text: str) -> list[ActionItem]:
 
         # TODO: / ACTION: / FOLLOW UP:
         if match := re.match(r"(?:TODO|ACTION|FOLLOW\s*UP)\s*:\s*(.+)", stripped, re.IGNORECASE):
-            actions.append(ActionItem(
-                task=match.group(1).strip(),
-                type="task",
-                priority="high",
-                source_context=stripped,
-            ))
+            actions.append(
+                ActionItem(
+                    task=match.group(1).strip(),
+                    type="task",
+                    priority="high",
+                    source_context=stripped,
+                )
+            )
             continue
 
         # Q: questions
         if match := re.match(r"Q\s*:\s*(.+)", stripped):
-            actions.append(ActionItem(
-                task=match.group(1).strip(),
-                type="question",
-                priority="medium",
-                source_context=stripped,
-            ))
+            actions.append(
+                ActionItem(
+                    task=match.group(1).strip(),
+                    type="question",
+                    priority="medium",
+                    source_context=stripped,
+                )
+            )
             continue
 
         # Unchecked checkboxes: - [ ] task
         if match := re.match(r"-\s*\[\s*\]\s*(.+)", stripped):
-            actions.append(ActionItem(
-                task=match.group(1).strip(),
-                type="task",
-                priority="medium",
-                source_context=stripped,
-            ))
+            actions.append(
+                ActionItem(
+                    task=match.group(1).strip(),
+                    type="task",
+                    priority="medium",
+                    source_context=stripped,
+                )
+            )
             continue
 
         # ! priority markers
         if match := re.match(r"!\s*(.+)", stripped):
-            actions.append(ActionItem(
-                task=match.group(1).strip(),
-                type="task",
-                priority="high",
-                source_context=stripped,
-            ))
+            actions.append(
+                ActionItem(
+                    task=match.group(1).strip(),
+                    type="task",
+                    priority="high",
+                    source_context=stripped,
+                )
+            )
             continue
 
         # Lines ending with ? are potential questions
         if stripped.endswith("?") and len(stripped) > 10:
-            actions.append(ActionItem(
-                task=stripped,
-                type="question",
-                priority="low",
-                source_context=stripped,
-            ))
+            actions.append(
+                ActionItem(
+                    task=stripped,
+                    type="question",
+                    priority="low",
+                    source_context=stripped,
+                )
+            )
 
     return actions
 
@@ -199,13 +210,15 @@ def _extract_by_color(
             elif group.color_name == "green":
                 continue  # green = done/approved, skip
 
-            actions.append(ActionItem(
-                task=f"[{group.color_name} annotation on page {page_id[:8]}]",
-                type=action_type,
-                priority="medium",
-                page_id=page_id,
-                color=group.color_name,
-            ))
+            actions.append(
+                ActionItem(
+                    task=f"[{group.color_name} annotation on page {page_id[:8]}]",
+                    type=action_type,
+                    priority="medium",
+                    page_id=page_id,
+                    color=group.color_name,
+                )
+            )
 
     return actions
 
@@ -244,14 +257,16 @@ def _parse_action_response(raw: str) -> list[ActionItem]:
     for item in items:
         if not isinstance(item, dict) or "task" not in item:
             continue
-        actions.append(ActionItem(
-            task=item["task"],
-            type=item.get("type", "task"),
-            assignee=item.get("assignee"),
-            deadline=item.get("deadline"),
-            priority=item.get("priority", "medium"),
-            source_context=item.get("source_context", ""),
-        ))
+        actions.append(
+            ActionItem(
+                task=item["task"],
+                type=item.get("type", "task"),
+                assignee=item.get("assignee"),
+                deadline=item.get("deadline"),
+                priority=item.get("priority", "medium"),
+                source_context=item.get("source_context", ""),
+            )
+        )
 
     return actions
 

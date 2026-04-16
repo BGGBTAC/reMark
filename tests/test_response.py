@@ -13,6 +13,7 @@ from src.response.uploader import ResponseUploader
 # ResponsePDFGenerator
 # =====================
 
+
 class TestResponsePDFGenerator:
     def test_generate_basic_pdf(self):
         gen = ResponsePDFGenerator()
@@ -34,7 +35,12 @@ class TestResponsePDFGenerator:
             summary="Reviewed architecture decisions for the backend rewrite.",
             key_points=["Migrate to async", "Replace ORM with raw SQL", "Add caching layer"],
             action_items=[
-                {"task": "Write migration plan", "priority": "high", "assignee": "Alice", "deadline": "2026-04-20"},
+                {
+                    "task": "Write migration plan",
+                    "priority": "high",
+                    "assignee": "Alice",
+                    "deadline": "2026-04-20",
+                },
                 {"task": "What about the legacy API?", "type": "question", "priority": "medium"},
                 {"task": "Set up staging", "priority": "low"},
             ],
@@ -56,7 +62,7 @@ class TestResponsePDFGenerator:
     def test_generate_special_chars(self):
         gen = ResponsePDFGenerator()
         content = ResponseContent(
-            note_title="Test <with> & special \"chars\"",
+            note_title='Test <with> & special "chars"',
             summary="Content with <html> & ampersands",
         )
 
@@ -82,6 +88,7 @@ class TestEscape:
 # =====================
 # NotebookWriter
 # =====================
+
 
 class TestNotebookWriter:
     def test_generate_single_page(self):
@@ -139,6 +146,7 @@ class TestNotebookWriter:
 # ResponseUploader
 # =====================
 
+
 class TestResponseUploader:
     @pytest.mark.asyncio
     async def test_upload_creates_folder_if_missing(self):
@@ -160,17 +168,19 @@ class TestResponseUploader:
         from src.remarkable.cloud import DocumentMetadata
 
         cloud = AsyncMock()
-        cloud.list_items = AsyncMock(return_value=[
-            DocumentMetadata(
-                id="existing-folder",
-                name="Responses",
-                parent="",
-                doc_type="CollectionType",
-                version=1,
-                hash="",
-                modified="",
-            ),
-        ])
+        cloud.list_items = AsyncMock(
+            return_value=[
+                DocumentMetadata(
+                    id="existing-folder",
+                    name="Responses",
+                    parent="",
+                    doc_type="CollectionType",
+                    version=1,
+                    hash="",
+                    modified="",
+                ),
+            ]
+        )
         cloud.upload_document = AsyncMock(return_value="new-doc-id")
 
         uploader = ResponseUploader(cloud, response_folder="Responses")

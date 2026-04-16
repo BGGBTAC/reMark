@@ -18,6 +18,8 @@ from uuid import uuid4
 
 import httpx
 
+from src.http_pool import SharedHttpPool
+
 logger = logging.getLogger(__name__)
 
 AUTH_BASE = "https://webapp-production-dot-remarkable-production.appspot.com"
@@ -48,20 +50,32 @@ class AuthManager:
             self._device_token = self._load_device_token()
         return self._device_token
 
-    async def get_user_token(self) -> str:
+    async def get_user_token(
+        self,
+        *,
+        http_pool: SharedHttpPool | None = None,
+    ) -> str:
         """Return a valid user token, refreshing if expired."""
         if self._user_token and time.time() < self._user_token_expiry - 300:
             return self._user_token
 
         logger.debug("User token expired or missing, refreshing...")
-        self._user_token = await self._refresh_user_token()
+        self._user_token = await self._refresh_user_token(http_pool=http_pool)
         self._user_token_expiry = _parse_jwt_expiry(self._user_token)
         return self._user_token
 
-    async def register_device(self, code: str) -> str:
+    async def register_device(
+        self,
+        code: str,
+        *,
+        http_pool: SharedHttpPool | None = None,
+    ) -> str:
         """Register a new device with a one-time code from my.remarkable.com.
 
-        Returns the device token and saves it to disk.
+        Returns the device token and saves it to disk. When ``http_pool``
+        is provided the registration reuses an existing keep-alive connection
+        instead of opening a fresh one (useful during initial setup flows
+        that also perform a token refresh in the same session).
         """
         device_id = str(uuid4())
         payload = {
@@ -70,17 +84,23 @@ class AuthManager:
             "deviceID": device_id,
         }
 
-        async with httpx.AsyncClient() as client:
+        if http_pool is not None:
+            client = await http_pool.client()
             resp = await client.post(
                 DEVICE_TOKEN_ENDPOINT,
                 json=payload,
                 timeout=30,
             )
+        else:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    DEVICE_TOKEN_ENDPOINT,
+                    json=payload,
+                    timeout=30,
+                )
 
         if resp.status_code != 200:
-            raise AuthError(
-                f"Device registration failed (HTTP {resp.status_code}): {resp.text}"
-            )
+            raise AuthError(f"Device registration failed (HTTP {resp.status_code}): {resp.text}")
 
         token = resp.text.strip()
         if not token:
@@ -91,9 +111,18 @@ class AuthManager:
         logger.info("Device registered successfully (ID: %s...)", device_id[:8])
         return token
 
-    async def _refresh_user_token(self) -> str:
-        """Exchange device token for a fresh user token."""
-        async with httpx.AsyncClient() as client:
+    async def _refresh_user_token(
+        self,
+        *,
+        http_pool: SharedHttpPool | None = None,
+    ) -> str:
+        """Exchange device token for a fresh user token.
+
+        Token refreshes happen on every sync cycle — reusing the shared
+        pool avoids a TLS handshake on the critical path of every run.
+        """
+        if http_pool is not None:
+            client = await http_pool.client()
             resp = await client.post(
                 USER_TOKEN_ENDPOINT,
                 headers={
@@ -103,6 +132,17 @@ class AuthManager:
                 content=b"",
                 timeout=30,
             )
+        else:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    USER_TOKEN_ENDPOINT,
+                    headers={
+                        "Authorization": f"Bearer {self.device_token}",
+                        "Content-Length": "0",
+                    },
+                    content=b"",
+                    timeout=30,
+                )
 
         if resp.status_code != 200:
             raise AuthError(
@@ -147,7 +187,9 @@ class AuthManager:
         parent = self._device_token_path.parent
         parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(
-            prefix=".device_token.", suffix=".tmp", dir=str(parent),
+            prefix=".device_token.",
+            suffix=".tmp",
+            dir=str(parent),
         )
         try:
             os.chmod(tmp_name, 0o600)
@@ -166,7 +208,8 @@ class AuthManager:
 
 
 def device_token_path_for(
-    device_id: str, base_dir: str | Path = "~/.remark-bridge",
+    device_id: str,
+    base_dir: str | Path = "~/.remark-bridge",
 ) -> Path:
     """Return the conventional token path for a named device.
 

@@ -1,6 +1,5 @@
 """Tests for the plugin system and related state tables."""
 
-
 import pytest
 
 from src.config import PluginConfig
@@ -17,6 +16,7 @@ from src.sync.state import SyncState
 # =====================
 # Hook base classes
 # =====================
+
 
 class TestHooks:
     def test_plugin_metadata_defaults(self):
@@ -69,6 +69,7 @@ class DummySyncHook(SyncHook):
 # Registry — direct registration
 # =====================
 
+
 class TestRegistryDirect:
     def test_disabled_config_loads_nothing(self, tmp_path):
         reg = PluginRegistry(PluginConfig(enabled=False, plugin_dir=str(tmp_path)))
@@ -85,7 +86,7 @@ class TestRegistryDirect:
         plugin_dir.mkdir()
 
         # Write a plugin file
-        (plugin_dir / "my_plugin.py").write_text('''
+        (plugin_dir / "my_plugin.py").write_text("""
 from src.plugins.hooks import ActionExtractorHook, PluginMetadata
 
 class MyPlugin(ActionExtractorHook):
@@ -95,7 +96,7 @@ class MyPlugin(ActionExtractorHook):
 
     async def extract(self, text, context):
         return []
-''')
+""")
 
         reg = PluginRegistry(PluginConfig(plugin_dir=str(plugin_dir)))
         reg.discover()
@@ -119,7 +120,7 @@ class MyPlugin(ActionExtractorHook):
     def test_disabled_plugins_skipped(self, tmp_path):
         plugin_dir = tmp_path / "plugins"
         plugin_dir.mkdir()
-        (plugin_dir / "p.py").write_text('''
+        (plugin_dir / "p.py").write_text("""
 from src.plugins.hooks import ActionExtractorHook, PluginMetadata
 
 class P(ActionExtractorHook):
@@ -129,12 +130,14 @@ class P(ActionExtractorHook):
 
     async def extract(self, text, context):
         return []
-''')
+""")
 
-        reg = PluginRegistry(PluginConfig(
-            plugin_dir=str(plugin_dir),
-            disabled=["skip-me"],
-        ))
+        reg = PluginRegistry(
+            PluginConfig(
+                plugin_dir=str(plugin_dir),
+                disabled=["skip-me"],
+            )
+        )
         reg.discover()
         assert reg.list_plugins() == []
 
@@ -142,7 +145,7 @@ class P(ActionExtractorHook):
         plugin_dir = tmp_path / "plugins"
         plugin_dir.mkdir()
         (plugin_dir / "bad.py").write_text("this is not valid python !")
-        (plugin_dir / "good.py").write_text('''
+        (plugin_dir / "good.py").write_text("""
 from src.plugins.hooks import ActionExtractorHook, PluginMetadata
 
 class G(ActionExtractorHook):
@@ -152,7 +155,7 @@ class G(ActionExtractorHook):
 
     async def extract(self, text, context):
         return []
-''')
+""")
 
         reg = PluginRegistry(PluginConfig(plugin_dir=str(plugin_dir)))
         reg.discover()
@@ -185,6 +188,7 @@ class G(ActionExtractorHook):
 # Example plugin
 # =====================
 
+
 class TestExamplePlugin:
     @pytest.mark.asyncio
     async def test_at_mention_extraction(self):
@@ -214,6 +218,7 @@ class TestExamplePlugin:
 # =====================
 # State — plugin_state
 # =====================
+
 
 class TestPluginState:
     def test_register_and_list(self, tmp_path):
@@ -248,6 +253,7 @@ class TestPluginState:
 # =====================
 # State — reverse_push_queue
 # =====================
+
 
 class TestReversePushQueue:
     def test_enqueue_and_list(self, tmp_path):
@@ -288,6 +294,7 @@ class TestReversePushQueue:
 # State — webpush_subscriptions
 # =====================
 
+
 class TestWebPushSubscriptions:
     def test_add_and_list(self, tmp_path):
         state = SyncState(tmp_path / "wp.db")
@@ -325,6 +332,7 @@ class TestWebPushSubscriptions:
 # =====================
 # State — template_instances
 # =====================
+
 
 class TestTemplateInstances:
     def test_record_and_lookup(self, tmp_path):

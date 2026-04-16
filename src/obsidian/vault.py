@@ -149,12 +149,14 @@ class ObsidianVault:
             fm, content = result
             fm["status"] = "archived"
             from datetime import datetime
+
             fm["archived_at"] = datetime.now(UTC).isoformat()
 
             fm_str = _dump_frontmatter(fm)
             target.write_text(f"---\n{fm_str}---\n\n{content}\n", encoding="utf-8")
         else:
             import shutil
+
             shutil.copy2(path, target)
 
         path.unlink()
@@ -221,7 +223,7 @@ def _parse_note(text: str) -> tuple[dict, str]:
         return {}, text
 
     fm_raw = text[3:end].strip()
-    content = text[end + 3:].strip()
+    content = text[end + 3 :].strip()
 
     try:
         fm = yaml.safe_load(fm_raw) or {}

@@ -128,9 +128,7 @@ class Notebook:
     @property
     def all_text(self) -> str:
         """Concatenated text from all pages."""
-        return "\n\n".join(
-            page.plain_text for page in self.pages if page.plain_text.strip()
-        )
+        return "\n\n".join(page.plain_text for page in self.pages if page.plain_text.strip())
 
 
 def parse_rm_file(rm_path: Path) -> PageContent:
@@ -166,7 +164,10 @@ def parse_rm_file(rm_path: Path) -> PageContent:
 
     logger.debug(
         "Parsed %s: %d text blocks, %d lines, %d glyphs",
-        rm_path.name, len(text_blocks), len(lines), len(glyph_ranges),
+        rm_path.name,
+        len(text_blocks),
+        len(lines),
+        len(glyph_ranges),
     )
 
     return PageContent(
@@ -303,9 +304,7 @@ def get_builtin_text_conversion(doc_dir: Path, doc_id: str) -> dict[str, str] | 
     return result if result else None
 
 
-def render_page_to_png(
-    doc_dir: Path, doc_id: str, page_id: str, dpi: int = 300
-) -> bytes | None:
+def render_page_to_png(doc_dir: Path, doc_id: str, page_id: str, dpi: int = 300) -> bytes | None:
     """Render a .rm page to PNG for image-based OCR.
 
     Uses rmscene to get stroke data, renders to SVG, converts to PNG via cairosvg.
@@ -377,13 +376,15 @@ def _group_strokes_by_color(
     result = []
     for color, color_lines in groups_by_color.items():
         bbox = _compute_bbox(color_lines)
-        result.append(StrokeGroup(
-            color=color,
-            color_index=COLOR_INDEX_MAP.get(color, -1),
-            lines=color_lines,
-            bbox=bbox,
-            page_id=page_id,
-        ))
+        result.append(
+            StrokeGroup(
+                color=color,
+                color_index=COLOR_INDEX_MAP.get(color, -1),
+                lines=color_lines,
+                bbox=bbox,
+                page_id=page_id,
+            )
+        )
 
     return result
 

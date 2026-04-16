@@ -112,10 +112,7 @@ def render_page_region(
             continue
 
         # Check if any points are in the region
-        in_region = any(
-            min_x <= p.x <= max_x and min_y <= p.y <= max_y
-            for p in line.points
-        )
+        in_region = any(min_x <= p.x <= max_x and min_y <= p.y <= max_y for p in line.points)
         if not in_region:
             continue
 
@@ -171,6 +168,7 @@ def _render_ocr_svg(lines: list, dpi: int, high_contrast: bool) -> str:
 
         # Skip eraser strokes
         from rmscene.scene_items import Pen
+
         if line.tool in (Pen.ERASER, Pen.ERASER_AREA):
             continue
 

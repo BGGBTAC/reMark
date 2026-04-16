@@ -179,7 +179,9 @@ class TestWhenSandboxCaps:
 class TestMultiDeviceConfigIsolation:
     @pytest.mark.asyncio
     async def test_device_filters_do_not_leak_into_shared_config(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ):
         from src.config import DeviceConfig
         from src.main import _sync_once
@@ -188,14 +190,18 @@ class TestMultiDeviceConfigIsolation:
         vault.mkdir()
         state_dir = tmp_path / "state"
         state_dir.mkdir()
-        cfg = AppConfig(**{
-            "sync": {"state_db": str(state_dir / "state.db")},
-            "obsidian": {"vault_path": str(vault)},
-        })
+        cfg = AppConfig(
+            **{
+                "sync": {"state_db": str(state_dir / "state.db")},
+                "obsidian": {"vault_path": str(vault)},
+            }
+        )
         cfg.remarkable.sync_folders = ["Shared"]
         cfg.remarkable.devices = [
             DeviceConfig(
-                id="pro", label="Pro", vault_subfolder="rm-pro",
+                id="pro",
+                label="Pro",
+                vault_subfolder="rm-pro",
                 sync_folders=["Only-Pro"],
             ),
         ]
@@ -204,8 +210,11 @@ class TestMultiDeviceConfigIsolation:
         # RemarkableCloud + DocumentManager are imported lazily inside
         # _sync_once, so we patch at the modules where they originate.
         class FakeCloud:
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
 
         monkeypatch.setattr(
             "src.remarkable.cloud.RemarkableCloud",
@@ -216,7 +225,7 @@ class TestMultiDeviceConfigIsolation:
             lambda *a, **kw: object(),
         )
         monkeypatch.setattr("src.main._get_auth", lambda *a, **kw: object())
-        monkeypatch.setattr("src.main._get_ocr_pipeline", lambda _cfg: object())
+        monkeypatch.setattr("src.main._get_ocr_pipeline", lambda _cfg, **kw: object())
 
         from src.sync.engine import SyncReport
 
@@ -226,7 +235,8 @@ class TestMultiDeviceConfigIsolation:
             return SyncReport()
 
         monkeypatch.setattr(
-            "src.sync.engine.SyncEngine.sync_once", fake_sync_once,
+            "src.sync.engine.SyncEngine.sync_once",
+            fake_sync_once,
         )
 
         await _sync_once(cfg)
@@ -254,15 +264,21 @@ class TestDeviceTokenPermissions:
             class R:
                 status_code = 200
                 text = "fake-device-token"
+
             return R()
 
         class FakeClient:
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
             post = AsyncMock(side_effect=fake_post)
 
         monkeypatch.setattr(
-            "src.remarkable.auth.httpx.AsyncClient", lambda: FakeClient(),
+            "src.remarkable.auth.httpx.AsyncClient",
+            lambda: FakeClient(),
         )
 
         await manager.register_device("one-time-code")
@@ -270,8 +286,5 @@ class TestDeviceTokenPermissions:
         mode = stat.S_IMODE(os.stat(token_path).st_mode)
         assert mode == 0o600, f"token file ended up {oct(mode)}"
         # Sibling tempfiles must not linger after the atomic swap
-        leftovers = [
-            p for p in Path(tmp_path).iterdir()
-            if p.name.startswith(".device_token.")
-        ]
+        leftovers = [p for p in Path(tmp_path).iterdir() if p.name.startswith(".device_token.")]
         assert leftovers == []

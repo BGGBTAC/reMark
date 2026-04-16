@@ -15,10 +15,10 @@ from src.ocr.pipeline import (
     _merge_texts,
 )
 from src.ocr.remarkable_builtin import RemarkableBuiltinOCR
-from src.ocr.vlm import _estimate_confidence
 from src.remarkable.formats import parse_rm_file
 
 # -- Helpers --
+
 
 def create_rm_fixture(path: Path, text: str) -> Path:
     blocks = list(simple_text_document(text))
@@ -59,6 +59,7 @@ class FailingOCREngine(OCREngine):
 
 # -- _merge_texts --
 
+
 class TestMergeTexts:
     def test_empty_typed(self):
         assert _merge_texts("", "OCR text here") == "OCR text here"
@@ -85,6 +86,7 @@ class TestMergeTexts:
 
 
 # -- OCRPipeline --
+
 
 class TestOCRPipeline:
     @pytest.mark.asyncio
@@ -125,9 +127,7 @@ class TestOCRPipeline:
 
         conv_dir = doc_dir / f"{doc_id}.textconversion"
         conv_dir.mkdir()
-        (conv_dir / "page-1.json").write_text(
-            json.dumps({"text": "MyScript converted text"})
-        )
+        (conv_dir / "page-1.json").write_text(json.dumps({"text": "MyScript converted text"}))
 
         page = parse_rm_file(doc_dir / "page-1.rm")
         pipeline = OCRPipeline(OCRConfig())
@@ -194,6 +194,7 @@ class TestOCRPipeline:
 
 # -- RemarkableBuiltinOCR --
 
+
 class TestRemarkableBuiltinOCR:
     def test_reads_text_format(self, tmp_path):
         conv_file = tmp_path / "page-1.json"
@@ -244,8 +245,16 @@ class TestRemarkableBuiltinOCR:
         data = {
             "text": "Hello World",
             "words": [
-                {"label": "Hello", "confidence": 0.95, "boundingBox": {"x": 10, "y": 20, "width": 50, "height": 15}},
-                {"label": "World", "confidence": 0.92, "boundingBox": {"x": 70, "y": 20, "width": 55, "height": 15}},
+                {
+                    "label": "Hello",
+                    "confidence": 0.95,
+                    "boundingBox": {"x": 10, "y": 20, "width": 50, "height": 15},
+                },
+                {
+                    "label": "World",
+                    "confidence": 0.92,
+                    "boundingBox": {"x": 70, "y": 20, "width": 55, "height": 15},
+                },
             ],
         }
         conv_file = tmp_path / "boxes.json"
@@ -261,27 +270,8 @@ class TestRemarkableBuiltinOCR:
         assert result.word_boxes[1].text == "World"
 
 
-# -- VLM confidence estimation --
-
-class TestVLMConfidence:
-    def test_empty_text(self):
-        assert _estimate_confidence("") == 0.0
-
-    def test_very_short_text(self):
-        assert _estimate_confidence("Hi") == 0.3
-
-    def test_unreadable_markers(self):
-        assert _estimate_confidence("This page is unreadable") == 0.2
-
-    def test_normal_text(self):
-        text = "This is a normal transcription with enough content to be considered valid."
-        assert _estimate_confidence(text) == 0.85
-
-    def test_medium_text(self):
-        assert _estimate_confidence("Short but valid text") == 0.7
-
-
 # -- PageText dataclass --
+
 
 class TestPageText:
     def test_basic_creation(self):

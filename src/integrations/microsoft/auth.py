@@ -110,9 +110,7 @@ class MicrosoftAuth:
         """
         flow = self.app.initiate_device_flow(scopes=self._scopes)
         if "user_code" not in flow:
-            raise MicrosoftAuthError(
-                f"Failed to start device flow: {json.dumps(flow, indent=2)}"
-            )
+            raise MicrosoftAuthError(f"Failed to start device flow: {json.dumps(flow, indent=2)}")
         return flow
 
     def complete_device_flow(self, flow: dict) -> dict:

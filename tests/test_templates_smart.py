@@ -30,12 +30,20 @@ class TestWhenEvaluator:
 
     def test_boolean_combinations(self):
         values = {"kind": "meeting", "urgent": True}
-        assert evaluate_condition(
-            "kind == 'meeting' and urgent", values,
-        ) is True
-        assert evaluate_condition(
-            "kind == 'review' or urgent", values,
-        ) is True
+        assert (
+            evaluate_condition(
+                "kind == 'meeting' and urgent",
+                values,
+            )
+            is True
+        )
+        assert (
+            evaluate_condition(
+                "kind == 'review' or urgent",
+                values,
+            )
+            is True
+        )
         assert evaluate_condition("not urgent", values) is False
 
     def test_missing_identifier_resolves_to_none(self):
@@ -66,7 +74,10 @@ class TestTemplateInheritance:
         (path / f"{name}.yaml").write_text(textwrap.dedent(body))
 
     def test_child_inherits_parent_fields(self, tmp_path):
-        self._write(tmp_path, "base", """
+        self._write(
+            tmp_path,
+            "base",
+            """
             name: base
             fields:
               - name: date
@@ -75,11 +86,16 @@ class TestTemplateInheritance:
               - name: notes
                 heading: Notes
                 type: text
-        """)
-        self._write(tmp_path, "child", """
+        """,
+        )
+        self._write(
+            tmp_path,
+            "child",
+            """
             name: child
             extends: base
-        """)
+        """,
+        )
         engine = TemplateEngine(tmp_path)
         child = engine.get("child")
         assert child is not None
@@ -87,27 +103,38 @@ class TestTemplateInheritance:
         assert names == ["date", "notes"]
 
     def test_child_appends_extra_fields(self, tmp_path):
-        self._write(tmp_path, "base", """
+        self._write(
+            tmp_path,
+            "base",
+            """
             name: base
             fields:
               - name: date
                 heading: Date
                 type: date
-        """)
-        self._write(tmp_path, "child", """
+        """,
+        )
+        self._write(
+            tmp_path,
+            "child",
+            """
             name: child
             extends: base
             fields:
               - name: tags
                 heading: Tags
                 type: list
-        """)
+        """,
+        )
         engine = TemplateEngine(tmp_path)
         names = [f.name for f in engine.get("child").fields]
         assert names == ["date", "tags"]
 
     def test_child_blocks_override_parent(self, tmp_path):
-        self._write(tmp_path, "base", """
+        self._write(
+            tmp_path,
+            "base",
+            """
             name: base
             fields:
               - name: summary
@@ -117,8 +144,12 @@ class TestTemplateInheritance:
               - name: closing
                 heading: Closing
                 type: text
-        """)
-        self._write(tmp_path, "child", """
+        """,
+        )
+        self._write(
+            tmp_path,
+            "child",
+            """
             name: child
             extends: base
             blocks:
@@ -126,7 +157,8 @@ class TestTemplateInheritance:
                 - name: detailed
                   heading: Detailed summary
                   type: text
-        """)
+        """,
+        )
         engine = TemplateEngine(tmp_path)
         fields = engine.get("child").fields
         # block `body` replaces `summary`, `closing` is preserved
@@ -142,7 +174,8 @@ class TestTemplateInheritance:
 
 class TestWhenSkipsRender:
     def test_when_false_hides_field(self, tmp_path):
-        (tmp_path / "sample.yaml").write_text(textwrap.dedent("""
+        (tmp_path / "sample.yaml").write_text(
+            textwrap.dedent("""
             name: sample
             fields:
               - name: base
@@ -152,7 +185,8 @@ class TestWhenSkipsRender:
                 heading: Extra
                 type: text
                 when: "kind == 'full'"
-        """))
+        """)
+        )
         engine = TemplateEngine(tmp_path)
         # PDF bytes — but easier: inspect that field filter would drop
         # "extra" under kind=short by rendering to bytes and looking

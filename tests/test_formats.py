@@ -26,6 +26,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 # -- Helpers --
 
+
 def create_rm_fixture(path: Path, text: str) -> Path:
     """Create a .rm file with the given text content."""
     blocks = list(simple_text_document(text))
@@ -48,6 +49,7 @@ def create_metadata_file(doc_dir: Path, doc_id: str, name: str) -> None:
 
 
 # -- parse_rm_file --
+
 
 class TestParseRmFile:
     def test_parse_text_content(self):
@@ -91,6 +93,7 @@ class TestParseRmFile:
 
 # -- parse_notebook --
 
+
 class TestParseNotebook:
     def test_parse_multipage_notebook(self, tmp_path):
         doc_id = "doc-123"
@@ -126,6 +129,7 @@ class TestParseNotebook:
 
 # -- extract_typed_text --
 
+
 class TestExtractTypedText:
     def test_extracts_text_from_pages(self, tmp_path):
         doc_id = "doc-text"
@@ -158,6 +162,7 @@ class TestExtractTypedText:
 
 
 # -- get_builtin_text_conversion --
+
 
 class TestBuiltinTextConversion:
     def test_reads_text_conversion(self, tmp_path):
@@ -205,6 +210,7 @@ class TestBuiltinTextConversion:
 
 # -- Color mapping --
 
+
 class TestColorMapping:
     def test_color_index_map_covers_basic_colors(self):
         assert COLOR_INDEX_MAP[PenColor.BLACK] == 0
@@ -218,6 +224,7 @@ class TestColorMapping:
 
 
 # -- TextBlock --
+
 
 class TestTextBlock:
     def test_plain_text(self):
@@ -247,19 +254,62 @@ class TestTextBlock:
 
 # -- DocumentManager --
 
+
 class TestDocumentManager:
     @pytest.mark.asyncio
     async def test_list_documents_filters_by_folder(self, tmp_path):
         from src.remarkable.cloud import DocumentMetadata
 
         mock_cloud = AsyncMock()
-        mock_cloud.list_items = AsyncMock(return_value=[
-            DocumentMetadata(id="f1", name="Work", parent="", doc_type="CollectionType", version=1, hash="a", modified=""),
-            DocumentMetadata(id="f2", name="Trash", parent="", doc_type="CollectionType", version=1, hash="b", modified=""),
-            DocumentMetadata(id="d1", name="Note 1", parent="f1", doc_type="DocumentType", version=1, hash="c", modified=""),
-            DocumentMetadata(id="d2", name="Note 2", parent="f2", doc_type="DocumentType", version=1, hash="d", modified=""),
-            DocumentMetadata(id="d3", name="Note 3", parent="f1", doc_type="DocumentType", version=1, hash="e", modified=""),
-        ])
+        mock_cloud.list_items = AsyncMock(
+            return_value=[
+                DocumentMetadata(
+                    id="f1",
+                    name="Work",
+                    parent="",
+                    doc_type="CollectionType",
+                    version=1,
+                    hash="a",
+                    modified="",
+                ),
+                DocumentMetadata(
+                    id="f2",
+                    name="Trash",
+                    parent="",
+                    doc_type="CollectionType",
+                    version=1,
+                    hash="b",
+                    modified="",
+                ),
+                DocumentMetadata(
+                    id="d1",
+                    name="Note 1",
+                    parent="f1",
+                    doc_type="DocumentType",
+                    version=1,
+                    hash="c",
+                    modified="",
+                ),
+                DocumentMetadata(
+                    id="d2",
+                    name="Note 2",
+                    parent="f2",
+                    doc_type="DocumentType",
+                    version=1,
+                    hash="d",
+                    modified="",
+                ),
+                DocumentMetadata(
+                    id="d3",
+                    name="Note 3",
+                    parent="f1",
+                    doc_type="DocumentType",
+                    version=1,
+                    hash="e",
+                    modified="",
+                ),
+            ]
+        )
 
         mgr = DocumentManager(mock_cloud, tmp_path)
         docs = await mgr.list_documents(sync_folders=["Work"], ignore_folders=["Trash"])
@@ -316,6 +366,7 @@ class TestDocumentManager:
 
 
 # -- Notebook dataclass --
+
 
 class TestNotebook:
     def test_all_text_concatenation(self):

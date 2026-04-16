@@ -60,6 +60,7 @@ def _version() -> str:
     """Return the installed package version, falling back if unreleased."""
     try:
         from importlib.metadata import PackageNotFoundError, version
+
         try:
             return version("remark-bridge")
         except PackageNotFoundError:
@@ -71,6 +72,7 @@ def _version() -> str:
 def _resolve_config() -> AppConfig:
     """Load config for a request. Override via env var REMARK_CONFIG."""
     import os
+
     path = os.environ.get("REMARK_CONFIG", "config.yaml")
     return load_config(path)
 
@@ -103,9 +105,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def lifespan(_app):  # noqa: ANN001
         scheduler_task = None
         reports_cfg = getattr(config, "reports", None)
-        reports_enabled = (
-            reports_cfg is None or getattr(reports_cfg, "enabled", True)
-        )
+        reports_enabled = reports_cfg is None or getattr(reports_cfg, "enabled", True)
         if reports_enabled and not demo.is_enabled():
             try:
                 from src.reports.scheduler import ReportScheduler
@@ -114,7 +114,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 if reports_cfg is not None:
                     tick = getattr(reports_cfg, "tick_seconds", 60)
                 scheduler = ReportScheduler(
-                    config, get_state(), tick_seconds=tick,
+                    config,
+                    get_state(),
+                    tick_seconds=tick,
                 )
                 _app.state.report_scheduler = scheduler
                 scheduler_task = _asyncio.create_task(scheduler.run())
@@ -130,7 +132,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     await scheduler_task
 
     app = FastAPI(
-        title=config.web.app_name, openapi_url=None, lifespan=lifespan,
+        title=config.web.app_name,
+        openapi_url=None,
+        lifespan=lifespan,
     )
 
     # Eagerly initialize the SyncState singleton so _auth_check and
@@ -142,6 +146,41 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     _early_state = SyncState(resolve_path(config.sync.state_db))
     _early_state._shared = True
     app.state.sync_state = _early_state
+    # Expose the resolved config on app.state so external router modules
+    # (e.g. api_notes, api_search) can read vault paths and other settings
+    # without relying on the create_app closure.
+    app.state.config = config
+
+    # Build a SearchQuery if the config has search enabled and a usable
+    # backend is configured. Failures are non-fatal — the /api/search
+    # endpoint degrades to 503 when search_query is None, which is the
+    # right behaviour for installs that haven't set up an embedding
+    # backend yet.
+    app.state.search_query = None
+    if config.search.enabled:
+        try:
+            from src.config import resolve_path as _resolve_path
+            from src.search.backends import build_backend as _build_backend
+            from src.search.index import VectorIndex as _VectorIndex
+            from src.search.query import SearchQuery as _SearchQuery
+
+            _backend = _build_backend(
+                config.search.backend,
+                model=config.search.model,
+                api_key_env=config.search.api_key_env,
+            )
+            _index = _VectorIndex(
+                db_path=_resolve_path(config.sync.state_db),
+                dimension=_backend.dimension,
+            )
+            app.state.search_query = _SearchQuery(
+                backend=_backend,
+                index=_index,
+            )
+            logger.info("Search query initialised (backend=%s)", config.search.backend)
+        except Exception as _search_exc:  # noqa: BLE001
+            logger.warning("Search query unavailable: %s", _search_exc)
+
     try:
         web_auth.bootstrap_admin(_early_state)
     except Exception as exc:  # noqa: BLE001
@@ -160,7 +199,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         session_cookie="remark_session",
         same_site="lax",
         https_only=bool(config.web.session_https_only),
-        max_age=60 * 60 * 24 * 14,   # 2 weeks
+        max_age=60 * 60 * 24 * 14,  # 2 weeks
     )
 
     # Audit middleware — logs every state-mutating request (POST /
@@ -222,20 +261,24 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             header = request.headers.get("authorization", "")
             if header.lower().startswith("basic "):
                 from base64 import b64decode
+
                 try:
                     raw = b64decode(header.split(" ", 1)[1]).decode()
                     u, _, p = raw.partition(":")
                 except Exception:
                     u, p = "", ""
                 ok_user = secrets.compare_digest(
-                    u.encode(), config.web.username.encode(),
+                    u.encode(),
+                    config.web.username.encode(),
                 )
                 ok_pass = secrets.compare_digest(
-                    p.encode(), config.web.password.encode(),
+                    p.encode(),
+                    config.web.password.encode(),
                 )
                 if ok_user and ok_pass:
                     return {
-                        "id": None, "username": config.web.username,
+                        "id": None,
+                        "username": config.web.username,
                         "role": "admin",
                     }
             accept = request.headers.get("accept", "")
@@ -290,7 +333,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     @app.get("/login", response_class=HTMLResponse)
     async def login_form(request: Request, error: str | None = None):
         return templates.TemplateResponse(
-            request, "login.html", {"error": error},
+            request,
+            "login.html",
+            {"error": error},
         )
 
     @app.post("/login")
@@ -303,19 +348,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         user = web_auth.authenticate(state, username, password)
         if user is None:
             state.audit(
-                action="login_failed", username=username,
+                action="login_failed",
+                username=username,
                 ip=(request.client.host if request.client else None),
                 user_agent=request.headers.get("user-agent", ""),
             )
             return templates.TemplateResponse(
-                request, "login.html",
+                request,
+                "login.html",
                 {"error": "Invalid username or password."},
                 status_code=401,
             )
         request.session["user_id"] = int(user["id"])
         request.session["username"] = user["username"]
         state.audit(
-            action="login", user_id=int(user["id"]),
+            action="login",
+            user_id=int(user["id"]),
             username=user["username"],
             ip=(request.client.host if request.client else None),
             user_agent=request.headers.get("user-agent", ""),
@@ -330,22 +378,28 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         request.session.clear()
         if user_id:
             state.audit(
-                action="logout", user_id=int(user_id), username=username,
+                action="logout",
+                user_id=int(user_id),
+                username=username,
             )
         return RedirectResponse(url="/login", status_code=303)
 
     @app.get("/reports", response_class=HTMLResponse)
     async def reports_view(
-        request: Request, _=Depends(_auth_check),
-        saved: str | None = None, error: str | None = None,
+        request: Request,
+        _=Depends(_auth_check),
+        saved: str | None = None,
+        error: str | None = None,
     ):
         web_auth.require_admin(request)
         state = get_state()
         return templates.TemplateResponse(
-            request, "reports.html",
+            request,
+            "reports.html",
             {
                 "reports": state.list_reports(),
-                "saved": saved, "error": error,
+                "saved": saved,
+                "error": error,
             },
         )
 
@@ -370,7 +424,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             first_run = next_run(schedule, datetime.now(UTC))
         except ValueError as exc:
             return RedirectResponse(
-                f"/reports?error={str(exc)[:80]}", status_code=303,
+                f"/reports?error={str(exc)[:80]}",
+                status_code=303,
             )
         report_id = state.create_report(
             name=name,
@@ -408,17 +463,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         report = state.get_report(report_id)
         if report is None:
             raise HTTPException(status_code=404)
+        import os
+
+        from src.llm.factory import build_llm_client
         from src.reports.runner import run_report
 
+        llm = build_llm_client(config.llm, anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"))
         try:
-            result = await run_report(report, state, config)
+            result = await run_report(report, state, config, llm=llm)
             state.update_report(
                 report_id,
                 last_run_at=datetime.now(UTC).isoformat(),
                 last_status=("ok" if result.ok else "partial"),
                 last_error=(
                     "; ".join(f"{c}: {e}" for c, e in result.channels_failed)
-                    if result.channels_failed else None
+                    if result.channels_failed
+                    else None
                 ),
             )
         except Exception as exc:  # noqa: BLE001
@@ -429,7 +489,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 last_error=str(exc)[:500],
             )
             return RedirectResponse(
-                f"/reports?error={str(exc)[:80]}", status_code=303,
+                f"/reports?error={str(exc)[:80]}",
+                status_code=303,
             )
         return RedirectResponse("/reports?saved=1", status_code=303)
 
@@ -447,11 +508,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         page_size = 100
         offset = (page - 1) * page_size
         rows = state.list_audit(
-            limit=page_size, offset=offset,
-            action=action or None, user_id=user_id,
+            limit=page_size,
+            offset=offset,
+            action=action or None,
+            user_id=user_id,
         )
         return templates.TemplateResponse(
-            request, "audit.html",
+            request,
+            "audit.html",
             {
                 "rows": rows,
                 "page": page,
@@ -476,21 +540,49 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         web_auth.require_admin(request)
         state = get_state()
         rows = state.list_audit(
-            limit=limit, offset=0,
-            action=action or None, user_id=user_id,
+            limit=limit,
+            offset=0,
+            action=action or None,
+            user_id=user_id,
         )
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow([
-            "id", "ts", "user_id", "username", "action", "resource",
-            "method", "status", "ip", "user_agent", "details",
-        ])
+        writer.writerow(
+            [
+                "id",
+                "ts",
+                "user_id",
+                "username",
+                "action",
+                "resource",
+                "method",
+                "status",
+                "ip",
+                "user_agent",
+                "details",
+            ]
+        )
         for r in rows:
-            writer.writerow([r.get(k, "") for k in (
-                "id", "ts", "user_id", "username", "action", "resource",
-                "method", "status", "ip", "user_agent", "details",
-            )])
+            writer.writerow(
+                [
+                    r.get(k, "")
+                    for k in (
+                        "id",
+                        "ts",
+                        "user_id",
+                        "username",
+                        "action",
+                        "resource",
+                        "method",
+                        "status",
+                        "ip",
+                        "user_agent",
+                        "details",
+                    )
+                ]
+            )
         from fastapi.responses import Response
+
         return Response(
             content=buf.getvalue(),
             media_type="text/csv",
@@ -504,7 +596,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         admin = web_auth.require_admin(request)
         state = get_state()
         return templates.TemplateResponse(
-            request, "users.html",
+            request,
+            "users.html",
             {"users": state.list_users(), "current_user": admin},
         )
 
@@ -529,8 +622,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             vault_path=(vault_path.strip() or None),
         )
         state.audit(
-            action="user_create", user_id=admin["id"], username=admin["username"],
-            resource=f"user:{user_id}", details=f"created '{username}' ({role})",
+            action="user_create",
+            user_id=admin["id"],
+            username=admin["username"],
+            resource=f"user:{user_id}",
+            details=f"created '{username}' ({role})",
         )
         return RedirectResponse(url="/users", status_code=303)
 
@@ -545,7 +641,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
         state.set_user_active(user_id, not bool(target["active"]))
         state.audit(
-            action="user_toggle", user_id=admin["id"], username=admin["username"],
+            action="user_toggle",
+            user_id=admin["id"],
+            username=admin["username"],
             resource=f"user:{user_id}",
             details=f"active={not bool(target['active'])}",
         )
@@ -563,7 +661,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail="Password too short (min 8 chars)")
         state.set_user_password(user_id, web_auth.hash_password(password))
         state.audit(
-            action="user_password", user_id=admin["id"], username=admin["username"],
+            action="user_password",
+            user_id=admin["id"],
+            username=admin["username"],
             resource=f"user:{user_id}",
         )
         return RedirectResponse(url="/users", status_code=303)
@@ -577,7 +677,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             recent_log = state.get_recent_log(limit=10)
             queue_summary = state.queue_summary()
             recent_rows = state.recent_synced(
-                limit=10, user_id=_scope_user_id(request),
+                limit=10,
+                user_id=_scope_user_id(request),
             )
         finally:
             state.close()
@@ -596,18 +697,23 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     rel = str(vault_path.resolve().relative_to(vault_root))
                 except (ValueError, OSError):
                     rel = vault_path.name
-            recent_notes.append({
-                "title": row["doc_name"] or Path(row["vault_path"] or "").stem,
-                "path": rel,
-                "summary": (row.get("parent_folder") or "")[:120],
-                "modified": row["last_synced_at"] or "",
-            })
+            recent_notes.append(
+                {
+                    "title": row["doc_name"] or Path(row["vault_path"] or "").stem,
+                    "path": rel,
+                    "summary": (row.get("parent_folder") or "")[:120],
+                    "modified": row["last_synced_at"] or "",
+                }
+            )
 
         return templates.TemplateResponse(
-            request, "dashboard.html",
+            request,
+            "dashboard.html",
             {
-                "stats": stats, "usage": usage,
-                "recent_notes": recent_notes, "recent_log": recent_log,
+                "stats": stats,
+                "usage": usage,
+                "recent_notes": recent_notes,
+                "recent_log": recent_log,
                 "queue_summary": queue_summary,
             },
         )
@@ -623,7 +729,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         state = get_state()
         try:
             rows = state.list_synced(
-                folder=folder, query=q, limit=300,
+                folder=folder,
+                query=q,
+                limit=300,
                 user_id=_scope_user_id(request),
             )
         finally:
@@ -637,22 +745,27 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 rel = str(Path(vault_path).resolve().relative_to(vault_root))
             except (ValueError, OSError):
                 rel = Path(vault_path).name
-            notes.append({
-                "title": row["doc_name"] or Path(vault_path).stem,
-                "path": rel,
-                "summary": (row.get("parent_folder") or "")[:160],
-                "tags": [],
-                "action_items": row.get("action_count") or 0,
-            })
+            notes.append(
+                {
+                    "title": row["doc_name"] or Path(vault_path).stem,
+                    "path": rel,
+                    "summary": (row.get("parent_folder") or "")[:160],
+                    "tags": [],
+                    "action_items": row.get("action_count") or 0,
+                }
+            )
 
         return templates.TemplateResponse(
-            request, "notes.html",
+            request,
+            "notes.html",
             {"notes": notes, "filter_folder": folder, "filter_query": q},
         )
 
     @app.get("/notes/{note_path:path}", response_class=HTMLResponse)
     async def view_note(
-        request: Request, note_path: str, _=Depends(_auth_check),
+        request: Request,
+        note_path: str,
+        _=Depends(_auth_check),
     ):
         vault = get_vault()
         vault_root = vault.path.resolve()
@@ -673,7 +786,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         fm, content = result
 
         return templates.TemplateResponse(
-            request, "note_view.html",
+            request,
+            "note_view.html",
             {"path": note_path, "frontmatter": fm, "content": content},
         )
 
@@ -689,25 +803,32 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 for line_no, line in enumerate(content.split("\n"), 1):
                     stripped = line.strip()
                     if stripped.startswith("- [ ]") or stripped.startswith("- [?]"):
-                        items.append({
-                            "source": source,
-                            "text": stripped,
-                            "file": action_file.name,
-                            "line": line_no,
-                            "is_question": stripped.startswith("- [?]"),
-                        })
+                        items.append(
+                            {
+                                "source": source,
+                                "text": stripped,
+                                "file": action_file.name,
+                                "line": line_no,
+                                "is_question": stripped.startswith("- [?]"),
+                            }
+                        )
 
         return templates.TemplateResponse(
-            request, "actions.html", {"items": items},
+            request,
+            "actions.html",
+            {"items": items},
         )
 
     @app.get("/ask", response_class=HTMLResponse)
     async def ask_form(request: Request, _=Depends(_auth_check)):
         return templates.TemplateResponse(
-            request, "ask.html",
+            request,
+            "ask.html",
             {
                 "search_enabled": config.search.enabled,
-                "answer": None, "hits": [], "query": "",
+                "answer": None,
+                "hits": [],
+                "query": "",
             },
         )
 
@@ -719,10 +840,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     ):
         if not config.search.enabled:
             return templates.TemplateResponse(
-                request, "ask.html",
+                request,
+                "ask.html",
                 {
-                    "search_enabled": False, "answer": None, "hits": [],
-                    "query": query, "error": "Search is disabled in config.",
+                    "search_enabled": False,
+                    "answer": None,
+                    "hits": [],
+                    "query": query,
+                    "error": "Search is disabled in config.",
                 },
             )
 
@@ -738,6 +863,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 api_key_env=config.search.api_key_env,
             )
             from src.config import resolve_path
+
             index = VectorIndex(
                 db_path=resolve_path(config.sync.state_db),
                 dimension=backend.dimension,
@@ -749,7 +875,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 client = engine._get_anthropic()
 
             searcher = SearchQuery(
-                backend=backend, index=index,
+                backend=backend,
+                index=index,
                 anthropic_client=client,
                 synthesis_model=config.search.synthesis_model,
             )
@@ -761,19 +888,25 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 mode=config.search.mode,
             )
 
-            hits = [{
-                "title": Path(h.vault_path).stem,
-                "path": h.vault_path,
-                "score": f"{h.score:.2f}",
-                "heading": h.heading_context,
-                "preview": h.content[:400],
-            } for h in result.hits]
+            hits = [
+                {
+                    "title": Path(h.vault_path).stem,
+                    "path": h.vault_path,
+                    "score": f"{h.score:.2f}",
+                    "heading": h.heading_context,
+                    "preview": h.content[:400],
+                }
+                for h in result.hits
+            ]
 
             return templates.TemplateResponse(
-                request, "ask.html",
+                request,
+                "ask.html",
                 {
-                    "search_enabled": True, "answer": result.answer,
-                    "hits": hits, "query": query,
+                    "search_enabled": True,
+                    "answer": result.answer,
+                    "hits": hits,
+                    "query": query,
                 },
             )
         except Exception as e:
@@ -783,9 +916,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             # a token prefix) and users' browsers cache pages.
             logger.warning("ask failed: %s", e)
             return templates.TemplateResponse(
-                request, "ask.html",
+                request,
+                "ask.html",
                 {
-                    "search_enabled": True, "answer": None, "hits": [],
+                    "search_enabled": True,
+                    "answer": None,
+                    "hits": [],
                     "query": query,
                     "error": "Search failed — check server logs for details.",
                 },
@@ -826,7 +962,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         header = request.headers.get("authorization", "")
         if not header.lower().startswith("bearer "):
             raise HTTPException(
-                status_code=401, detail="Bearer token required",
+                status_code=401,
+                detail="Bearer token required",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         token = header.split(" ", 1)[1].strip()
@@ -837,7 +974,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             state.close()
         if label is None:
             raise HTTPException(
-                status_code=401, detail="Invalid or revoked token",
+                status_code=401,
+                detail="Invalid or revoked token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return label
@@ -882,7 +1020,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         target = (vault_root / rel).resolve()
         if vault_root not in target.parents and target != vault_root:
             raise HTTPException(
-                status_code=400, detail="vault_path escapes the vault",
+                status_code=400,
+                detail="vault_path escapes the vault",
             )
         if not target.exists() or not target.is_file():
             raise HTTPException(status_code=404, detail="Note not found")
@@ -901,23 +1040,24 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
         engine = TemplateEngine(resolve_path(config.templates.user_templates_dir))
         templates_list = sorted(
-            engine.list_templates(), key=lambda t: t.name,
+            engine.list_templates(),
+            key=lambda t: t.name,
         )
         # Also expose the raw list of YAML files in the user dir so the
         # editor can reach files whose YAML failed to parse.
         user_dir = Path(config.templates.user_templates_dir).expanduser()
-        user_files = (
-            sorted(p.name for p in user_dir.glob("*.yaml"))
-            if user_dir.exists() else []
-        )
+        user_files = sorted(p.name for p in user_dir.glob("*.yaml")) if user_dir.exists() else []
         return templates.TemplateResponse(
-            request, "templates_index.html",
+            request,
+            "templates_index.html",
             {"templates": templates_list, "user_files": user_files},
         )
 
     @app.get("/templates/{name}", response_class=HTMLResponse)
     async def templates_edit(
-        request: Request, name: str, _=Depends(_auth_check),
+        request: Request,
+        name: str,
+        _=Depends(_auth_check),
     ):
         import re as _re
 
@@ -935,11 +1075,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             source = builtin_path.read_text(encoding="utf-8")
             origin = "builtin"
         else:
-            source = f"name: {name}\ndescription: \"\"\nfields: []\n"
+            source = f'name: {name}\ndescription: ""\nfields: []\n'
             origin = "new"
 
         return templates.TemplateResponse(
-            request, "templates_edit.html",
+            request,
+            "templates_edit.html",
             {
                 "name": name,
                 "source": source,
@@ -951,7 +1092,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.post("/templates/{name}")
     async def templates_save(
-        request: Request, name: str, _=Depends(_auth_check),
+        request: Request,
+        name: str,
+        _=Depends(_auth_check),
     ):
         import re as _re
 
@@ -971,10 +1114,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 raise ValueError("Top-level must be a mapping with a 'name' key.")
             # Parse via engine's own loader to catch field-level issues.
             from src.templates.engine import _parse_template  # type: ignore[attr-defined]
+
             _parse_template(data)
         except Exception as exc:
             return templates.TemplateResponse(
-                request, "templates_edit.html",
+                request,
+                "templates_edit.html",
                 {
                     "name": name,
                     "source": source,
@@ -997,12 +1142,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             state.close()
 
         return RedirectResponse(
-            url=f"/templates/{name}?saved=1", status_code=303,
+            url=f"/templates/{name}?saved=1",
+            status_code=303,
         )
 
     @app.post("/templates/{name}/preview")
     async def templates_preview(
-        request: Request, name: str, _=Depends(_auth_check),
+        request: Request,
+        name: str,
+        _=Depends(_auth_check),
     ):
         """Render a template preview as PDF bytes for live preview."""
         import tempfile
@@ -1025,12 +1173,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             tmp_path.write_text(source, encoding="utf-8")
             try:
                 from src.templates.engine import TemplateEngine
+
                 engine = TemplateEngine(tmp)
                 pdf = engine.render_pdf(data["name"], {})
             except Exception as exc:
                 return JSONResponse({"error": str(exc)}, status_code=400)
 
         from fastapi.responses import Response
+
         return Response(content=pdf, media_type="application/pdf")
 
     @app.get("/queue", response_class=HTMLResponse)
@@ -1046,7 +1196,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         finally:
             state.close()
         return templates.TemplateResponse(
-            request, "queue.html",
+            request,
+            "queue.html",
             {"rows": rows, "summary": summary, "filter_status": status},
         )
 
@@ -1061,7 +1212,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.post("/queue/clear")
     async def queue_clear(
-        request: Request, _=Depends(_auth_check),
+        request: Request,
+        _=Depends(_auth_check),
     ):
         form = await request.form()
         status = form.get("status") or None
@@ -1077,12 +1229,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         state = get_state()
         try:
             rows = state.list_devices(
-                active_only=False, user_id=_scope_user_id(request),
+                active_only=False,
+                user_id=_scope_user_id(request),
             )
         finally:
             state.close()
         return templates.TemplateResponse(
-            request, "devices.html", {"devices": rows},
+            request,
+            "devices.html",
+            {"devices": rows},
         )
 
     # Sections users can edit from the UI. Ordered deliberately to
@@ -1090,6 +1245,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     editable_sections = [
         ("remarkable", "reMarkable", "remarkable"),
         ("sync", "Sync", "sync"),
+        ("llm", "LLM provider", "llm"),
         ("processing", "Processing (AI)", "processing"),
         ("ocr", "OCR", "ocr"),
         ("obsidian", "Obsidian vault", "obsidian"),
@@ -1111,6 +1267,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         from pydantic import BaseModel
 
         from src.web.config_writer import is_secret_field
+
         keys: set[str] = set()
         for name, info in model_cls.model_fields.items():
             dotted = f"{prefix}{name}"
@@ -1124,13 +1281,16 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_index(request: Request, _=Depends(_auth_check)):
         return templates.TemplateResponse(
-            request, "settings.html",
+            request,
+            "settings.html",
             {"sections": editable_sections},
         )
 
     @app.get("/settings/{section}", response_class=HTMLResponse)
     async def settings_section(
-        request: Request, section: str, _=Depends(_auth_check),
+        request: Request,
+        section: str,
+        _=Depends(_auth_check),
     ):
         from src.config import AppConfig as _AppCfg
         from src.web.settings_forms import build_form
@@ -1144,7 +1304,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
         form = build_form(submodel, current, title=section.capitalize())
         return templates.TemplateResponse(
-            request, "settings_section.html",
+            request,
+            "settings_section.html",
             {
                 "section": section,
                 "form": form,
@@ -1156,7 +1317,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.post("/settings/{section}")
     async def settings_section_save(
-        request: Request, section: str, _=Depends(_auth_check),
+        request: Request,
+        section: str,
+        _=Depends(_auth_check),
     ):
         import os
 
@@ -1179,7 +1342,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         except Exception as exc:
             current = getattr(config, section)
             return templates.TemplateResponse(
-                request, "settings_section.html",
+                request,
+                "settings_section.html",
                 {
                     "section": section,
                     "form": build_form(submodel, current),
@@ -1209,25 +1373,28 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             state.close()
 
         return RedirectResponse(
-            url=f"/settings/{section}?saved=1", status_code=303,
+            url=f"/settings/{section}?saved=1",
+            status_code=303,
         )
 
     # -- PWA: manifest + service worker + push subscribe --
 
     @app.get("/manifest.webmanifest")
     async def manifest():
-        return JSONResponse({
-            "name": config.web.app_name,
-            "short_name": "reMark",
-            "start_url": "/",
-            "display": "standalone",
-            "background_color": "#ffffff",
-            "theme_color": "#1f2937",
-            "icons": [
-                {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
-                {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
-            ],
-        })
+        return JSONResponse(
+            {
+                "name": config.web.app_name,
+                "short_name": "reMark",
+                "start_url": "/",
+                "display": "standalone",
+                "background_color": "#ffffff",
+                "theme_color": "#1f2937",
+                "icons": [
+                    {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                    {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                ],
+            }
+        )
 
     @app.get("/service-worker.js")
     async def service_worker():
@@ -1243,7 +1410,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.post("/webpush/subscribe")
     async def webpush_subscribe(
-        request: Request, _=Depends(_auth_check),
+        request: Request,
+        _=Depends(_auth_check),
     ):
         data = await request.json()
         endpoint = data.get("endpoint", "")
@@ -1302,6 +1470,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             payload,
             status_code=200 if ok else 503,
         )
+
+    # -- Extended Bridge API routers (Obsidian plugin v0.2) ---------------
+    from src.web import api_notes, api_search
+
+    app.include_router(api_notes.router)
+    app.include_router(api_search.router)
 
     return app
 

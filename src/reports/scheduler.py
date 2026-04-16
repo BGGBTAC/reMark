@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from datetime import UTC, datetime, timedelta
 
 from src.config import AppConfig
+from src.llm.factory import build_llm_client
 from src.reports.runner import ReportRunner
 from src.sync.state import SyncState
 
@@ -75,8 +77,7 @@ def next_run(schedule: str, reference: datetime) -> datetime:
         return candidate
 
     raise ValueError(
-        f"Unknown schedule '{schedule}'. "
-        "Expected 'every 30m', 'daily 09:00', 'weekly mon 09:00'."
+        f"Unknown schedule '{schedule}'. Expected 'every 30m', 'daily 09:00', 'weekly mon 09:00'."
     )
 
 
@@ -98,7 +99,11 @@ class ReportScheduler:
     ):
         self._config = config
         self._state = state
-        self._runner = ReportRunner(config, state)
+        _llm = build_llm_client(
+            config.llm,
+            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        )
+        self._runner = ReportRunner(config, state, llm=_llm)
         self._tick = tick_seconds
         self._stopped = asyncio.Event()
 
@@ -113,6 +118,7 @@ class ReportScheduler:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ReportScheduler tick failed: %s", exc)
             import contextlib
+
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._stopped.wait(), timeout=self._tick)
 
@@ -133,7 +139,8 @@ class ReportScheduler:
                     last_status=("ok" if result.ok else "partial"),
                     last_error=(
                         "; ".join(f"{c}: {e}" for c, e in result.channels_failed)
-                        if result.channels_failed else None
+                        if result.channels_failed
+                        else None
                     ),
                 )
             except Exception as exc:  # noqa: BLE001

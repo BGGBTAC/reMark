@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-import anthropic
+from src.llm.client import LLMClient, LLMMessage
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +40,8 @@ class NoteSummary:
 class NoteSummarizer:
     """Generate note summaries via the Anthropic API."""
 
-    def __init__(self, client: anthropic.AsyncAnthropic, model: str):
-        self._client = client
+    def __init__(self, llm: LLMClient, model: str):
+        self._llm = llm
         self._model = model
 
     async def summarize(self, text: str, notebook_name: str = "") -> NoteSummary:
@@ -56,28 +56,23 @@ class NoteSummarizer:
         try:
             context = f"Notebook: {notebook_name}\n\n" if notebook_name else ""
 
-            response = await self._client.messages.create(
+            response = await self._llm.complete(
+                system=SUMMARY_PROMPT,
+                messages=[LLMMessage(role="user", content=f"{context}{text[:4000]}")],
                 model=self._model,
                 max_tokens=512,
-                system=SUMMARY_PROMPT,
-                messages=[{
-                    "role": "user",
-                    "content": f"{context}{text[:4000]}",  # cap input
-                }],
             )
 
-            raw = response.content[0].text.strip()
-            return _parse_summary_response(raw, notebook_name)
+            return _parse_summary_response(response.text.strip(), notebook_name)
 
         except Exception as e:
             logger.warning("Summarization failed: %s", e)
             return _fallback_summary(text, notebook_name)
 
-    async def summarize_batch(
-        self, notes: list[tuple[str, str]]
-    ) -> list[NoteSummary]:
+    async def summarize_batch(self, notes: list[tuple[str, str]]) -> list[NoteSummary]:
         """Summarize multiple notes. Each entry is (text, notebook_name)."""
         import asyncio
+
         tasks = [self.summarize(text, name) for text, name in notes]
         return await asyncio.gather(*tasks)
 

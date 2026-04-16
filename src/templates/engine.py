@@ -34,9 +34,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TemplateField:
     """A single field in a template."""
+
     name: str
     heading: str
-    type: str = "text"       # "text" | "list" | "date" | "checklist"
+    type: str = "text"  # "text" | "list" | "date" | "checklist"
     required: bool = False
     hint: str = ""
     # Optional conditional. When set, the field is only rendered if the
@@ -45,17 +46,18 @@ class TemplateField:
     # not. Identifiers resolve against the values dict. See
     # _eval_condition for the exact grammar.
     when: str = ""
-    block: str = ""          # named block for templates that `extends`
+    block: str = ""  # named block for templates that `extends`
 
 
 @dataclass
 class Template:
     """A template definition."""
+
     name: str
     description: str
     fields: list[TemplateField] = field(default_factory=list)
-    title_prefix: str = ""   # prepended to PDF title when pushed
-    extends: str = ""        # name of parent template (optional)
+    title_prefix: str = ""  # prepended to PDF title when pushed
+    extends: str = ""  # name of parent template (optional)
     blocks: dict[str, list[TemplateField]] = field(default_factory=dict)
 
 
@@ -104,9 +106,7 @@ class TemplateEngine:
             if name in resolved:
                 return resolved[name]
             if name in path:
-                raise ValueError(
-                    f"Template cycle: {' -> '.join(path + [name])}"
-                )
+                raise ValueError(f"Template cycle: {' -> '.join(path + [name])}")
             template = self._templates.get(name)
             if template is None or not template.extends:
                 resolved[name] = template  # type: ignore[assignment]
@@ -116,7 +116,8 @@ class TemplateEngine:
             if parent is None:
                 logger.warning(
                     "Template '%s' extends unknown '%s' — keeping as-is",
-                    name, template.extends,
+                    name,
+                    template.extends,
                 )
                 resolved[name] = template
                 return template
@@ -131,9 +132,7 @@ class TemplateEngine:
                     merged_fields.append(pf)
             # Append any child fields that don't belong to a named
             # block (i.e. additions not overrides).
-            merged_fields.extend(
-                f for f in template.fields if not f.block
-            )
+            merged_fields.extend(f for f in template.fields if not f.block)
 
             flattened = Template(
                 name=template.name,
@@ -207,24 +206,38 @@ class TemplateEngine:
 
 _TEMPLATE_STYLES = {
     "title": ParagraphStyle(
-        "TemplateTitle", fontSize=20, leading=26, spaceAfter=10 * mm,
+        "TemplateTitle",
+        fontSize=20,
+        leading=26,
+        spaceAfter=10 * mm,
         fontName="Helvetica-Bold",
     ),
     "heading": ParagraphStyle(
-        "TemplateHeading", fontSize=14, leading=18,
-        spaceBefore=6 * mm, spaceAfter=2 * mm,
+        "TemplateHeading",
+        fontSize=14,
+        leading=18,
+        spaceBefore=6 * mm,
+        spaceAfter=2 * mm,
         fontName="Helvetica-Bold",
     ),
     "hint": ParagraphStyle(
-        "TemplateHint", fontSize=9, leading=12, textColor="#888888",
+        "TemplateHint",
+        fontSize=9,
+        leading=12,
+        textColor="#888888",
         spaceAfter=2 * mm,
     ),
     "line": ParagraphStyle(
-        "TemplateLine", fontSize=11, leading=22,
+        "TemplateLine",
+        fontSize=11,
+        leading=22,
         spaceAfter=4 * mm,
     ),
     "prefilled": ParagraphStyle(
-        "TemplatePrefilled", fontSize=11, leading=16, spaceAfter=4 * mm,
+        "TemplatePrefilled",
+        fontSize=11,
+        leading=16,
+        spaceAfter=4 * mm,
         textColor="#333333",
     ),
 }
@@ -234,14 +247,16 @@ def _render_template_pdf(template: Template, values: dict) -> bytes:
     """Render a template to PDF bytes, with writing space for each field."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(
-        buffer, pagesize=A4,
-        leftMargin=2 * cm, rightMargin=2 * cm,
-        topMargin=2 * cm, bottomMargin=2 * cm,
+        buffer,
+        pagesize=A4,
+        leftMargin=2 * cm,
+        rightMargin=2 * cm,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
     )
 
     story: list = [
-        Paragraph(template.title_prefix or template.name.title(),
-                  _TEMPLATE_STYLES["title"]),
+        Paragraph(template.title_prefix or template.name.title(), _TEMPLATE_STYLES["title"]),
     ]
 
     if template.description:
@@ -262,8 +277,7 @@ def _render_template_pdf(template: Template, values: dict) -> bytes:
         # Allocate writing space depending on field type
         if field_def.type in ("list", "checklist"):
             for _ in range(5):
-                story.append(Paragraph("• ___________________________",
-                                       _TEMPLATE_STYLES["line"]))
+                story.append(Paragraph("• ___________________________", _TEMPLATE_STYLES["line"]))
         elif field_def.type == "date":
             story.append(Paragraph("____-____-____", _TEMPLATE_STYLES["line"]))
         else:
@@ -340,6 +354,7 @@ def _parse_template(data: dict) -> Template:
     Fields can carry a ``when:`` expression — see
     :func:`evaluate_condition` for the accepted grammar.
     """
+
     def _field_from_dict(f: dict, block: str = "") -> TemplateField:
         return TemplateField(
             name=f["name"],
@@ -383,12 +398,22 @@ class ConditionError(ValueError):
 # is rejected before evaluation. Keeps the sandbox tiny and auditable.
 _ALLOWED_NODES: tuple[type[ast.AST], ...] = (
     ast.Expression,
-    ast.BoolOp, ast.And, ast.Or,
-    ast.UnaryOp, ast.Not,
-    ast.Compare, ast.Eq, ast.NotEq, ast.In, ast.NotIn,
+    ast.BoolOp,
+    ast.And,
+    ast.Or,
+    ast.UnaryOp,
+    ast.Not,
+    ast.Compare,
+    ast.Eq,
+    ast.NotEq,
+    ast.In,
+    ast.NotIn,
     ast.Constant,
-    ast.Name, ast.Load,
-    ast.List, ast.Tuple, ast.Set,
+    ast.Name,
+    ast.Load,
+    ast.List,
+    ast.Tuple,
+    ast.Set,
 )
 
 
@@ -420,8 +445,7 @@ def evaluate_condition(expr: str, values: dict) -> bool:
         return True
     if len(expr) > MAX_WHEN_EXPR_LEN:
         raise ConditionError(
-            f"when: expression too long ({len(expr)} chars, "
-            f"max {MAX_WHEN_EXPR_LEN})"
+            f"when: expression too long ({len(expr)} chars, max {MAX_WHEN_EXPR_LEN})"
         )
 
     try:
@@ -434,15 +458,11 @@ def evaluate_condition(expr: str, values: dict) -> bool:
     nodes = list(ast.walk(tree))
     if len(nodes) > MAX_WHEN_AST_NODES:
         raise ConditionError(
-            f"when: expression too complex ({len(nodes)} nodes, "
-            f"max {MAX_WHEN_AST_NODES})"
+            f"when: expression too complex ({len(nodes)} nodes, max {MAX_WHEN_AST_NODES})"
         )
     for node in nodes:
         if not isinstance(node, _ALLOWED_NODES):
-            raise ConditionError(
-                "Disallowed syntax in when expression: "
-                f"{type(node).__name__}"
-            )
+            raise ConditionError(f"Disallowed syntax in when expression: {type(node).__name__}")
 
     try:
         return bool(_walk_node(tree.body, values))
@@ -482,12 +502,13 @@ def _walk_node(node: ast.AST, values: dict):
         return True
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
         return [_walk_node(e, values) for e in node.elts]
-    raise ConditionError(
-        f"Unsupported node in when expression: {type(node).__name__}"
-    )
+    raise ConditionError(f"Unsupported node in when expression: {type(node).__name__}")
 
 
 __all__ = [
-    "Template", "TemplateField", "TemplateEngine",
-    "evaluate_condition", "ConditionError",
+    "Template",
+    "TemplateField",
+    "TemplateEngine",
+    "evaluate_condition",
+    "ConditionError",
 ]

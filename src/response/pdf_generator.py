@@ -125,7 +125,8 @@ class ResponsePDFGenerator:
         pdf_bytes = buffer.getvalue()
         logger.info(
             "Generated response PDF for '%s' (%d bytes)",
-            content.note_title, len(pdf_bytes),
+            content.note_title,
+            len(pdf_bytes),
         )
         return pdf_bytes
 
@@ -134,17 +135,21 @@ class ResponsePDFGenerator:
         story = []
 
         # Title
-        story.append(Paragraph(
-            _escape(content.note_title),
-            EINK_STYLES["title"],
-        ))
+        story.append(
+            Paragraph(
+                _escape(content.note_title),
+                EINK_STYLES["title"],
+            )
+        )
 
         # Date subtitle
         now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
-        story.append(Paragraph(
-            f"Generated {now}",
-            EINK_STYLES["subtitle"],
-        ))
+        story.append(
+            Paragraph(
+                f"Generated {now}",
+                EINK_STYLES["subtitle"],
+            )
+        )
 
         # Summary section
         if content.summary:
@@ -155,10 +160,12 @@ class ResponsePDFGenerator:
         if content.key_points:
             story.append(Paragraph("Key Points", EINK_STYLES["heading"]))
             for point in content.key_points:
-                story.append(Paragraph(
-                    f"• {_escape(point)}",
-                    EINK_STYLES["bullet"],
-                ))
+                story.append(
+                    Paragraph(
+                        f"• {_escape(point)}",
+                        EINK_STYLES["bullet"],
+                    )
+                )
 
         # Action items
         if content.action_items:
@@ -184,45 +191,48 @@ class ResponsePDFGenerator:
                 if deadline:
                     meta_parts.append(f"Due: {deadline}")
                 if meta_parts:
-                    story.append(Paragraph(
-                        " · ".join(meta_parts),
-                        EINK_STYLES["context"],
-                    ))
+                    story.append(
+                        Paragraph(
+                            " · ".join(meta_parts),
+                            EINK_STYLES["context"],
+                        )
+                    )
 
         # Analysis
         if content.analysis:
             story.append(Paragraph("Analysis", EINK_STYLES["heading"]))
             for paragraph in content.analysis.split("\n\n"):
                 if paragraph.strip():
-                    story.append(Paragraph(
-                        _escape(paragraph.strip()),
-                        EINK_STYLES["body"],
-                    ))
+                    story.append(
+                        Paragraph(
+                            _escape(paragraph.strip()),
+                            EINK_STYLES["body"],
+                        )
+                    )
 
         # Related notes
         if content.related_notes:
             story.append(Paragraph("Related Notes", EINK_STYLES["heading"]))
             for note in content.related_notes:
-                story.append(Paragraph(
-                    f"→ {_escape(note)}",
-                    EINK_STYLES["bullet"],
-                ))
+                story.append(
+                    Paragraph(
+                        f"→ {_escape(note)}",
+                        EINK_STYLES["bullet"],
+                    )
+                )
 
         # Footer
         story.append(Spacer(1, 15 * mm))
-        story.append(Paragraph(
-            "reMark — synced from reMarkable",
-            EINK_STYLES["footer"],
-        ))
+        story.append(
+            Paragraph(
+                "reMark — synced from reMarkable",
+                EINK_STYLES["footer"],
+            )
+        )
 
         return story
 
 
 def _escape(text: str) -> str:
     """Escape special XML/HTML chars for ReportLab paragraphs."""
-    return (
-        text
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

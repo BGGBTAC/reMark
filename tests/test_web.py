@@ -34,13 +34,13 @@ def client(config):
     return TestClient(app)
 
 
-def _write_note(vault_path: Path, folder: str, name: str, title: str, body: str,
-                **frontmatter):
+def _write_note(vault_path: Path, folder: str, name: str, title: str, body: str, **frontmatter):
     fm = {"title": title, "source": "remarkable", **frontmatter}
     (vault_path / folder).mkdir(exist_ok=True, parents=True)
     path = vault_path / folder / f"{name}.md"
 
     import yaml
+
     fm_str = yaml.dump(fm, default_flow_style=False, sort_keys=False)
     path.write_text(f"---\n{fm_str}---\n\n{body}\n", encoding="utf-8")
     return path
@@ -70,6 +70,7 @@ def _seed_synced(config, doc_id: str, title: str, folder: str, vault_path: Path)
 # Routes
 # =====================
 
+
 class TestRoutes:
     def test_dashboard_renders(self, client):
         resp = client.get("/")
@@ -84,7 +85,10 @@ class TestRoutes:
 
     def test_notes_lists_synced(self, client, config, vault_path):
         note_path = _write_note(
-            vault_path, "Inbox", "sample", "Sample Note",
+            vault_path,
+            "Inbox",
+            "sample",
+            "Sample Note",
             "# Sample\n\nContent here",
         )
         _seed_synced(config, "doc-1", "Sample Note", "Inbox", note_path)
@@ -96,11 +100,17 @@ class TestRoutes:
         # 0.6.5 note filtering happens server-side against doc_name;
         # content-level search is what /ask is for.
         alpha_path = _write_note(
-            vault_path, "Inbox", "alpha", "Alpha Apples",
+            vault_path,
+            "Inbox",
+            "alpha",
+            "Alpha Apples",
             "Content about apples",
         )
         beta_path = _write_note(
-            vault_path, "Inbox", "beta", "Beta Bananas",
+            vault_path,
+            "Inbox",
+            "beta",
+            "Beta Bananas",
             "Content about bananas",
         )
         _seed_synced(config, "doc-alpha", "Alpha Apples", "Inbox", alpha_path)
@@ -112,8 +122,7 @@ class TestRoutes:
         assert "Beta" not in resp.text
 
     def test_view_note(self, client, vault_path):
-        _write_note(vault_path, "Inbox", "detail", "Detail",
-                    "Body content")
+        _write_note(vault_path, "Inbox", "detail", "Detail", "Body content")
         resp = client.get("/notes/Inbox/detail.md")
         assert resp.status_code == 200
         assert "Detail" in resp.text
@@ -197,6 +206,7 @@ class TestRoutes:
 # PWA endpoints
 # =====================
 
+
 class TestPWA:
     def test_manifest(self, client):
         resp = client.get("/manifest.webmanifest")
@@ -221,10 +231,13 @@ class TestPWA:
         assert resp.status_code == 400
 
     def test_webpush_subscribe_success(self, client):
-        resp = client.post("/webpush/subscribe", json={
-            "endpoint": "https://push.example/abc",
-            "keys": {"p256dh": "PUB", "auth": "AUTH"},
-        })
+        resp = client.post(
+            "/webpush/subscribe",
+            json={
+                "endpoint": "https://push.example/abc",
+                "keys": {"p256dh": "PUB", "auth": "AUTH"},
+            },
+        )
         assert resp.status_code == 200
         assert resp.json() == {"ok": True}
 
@@ -232,6 +245,7 @@ class TestPWA:
 # =====================
 # Auth
 # =====================
+
 
 class TestAuth:
     def test_auth_enabled_rejects_without_creds(self, config):
@@ -259,6 +273,7 @@ class TestAuth:
 # =====================
 # Push helper
 # =====================
+
 
 class TestPushHelper:
     def test_generate_vapid_keys(self):
