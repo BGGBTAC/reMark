@@ -1094,6 +1094,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     editable_sections = [
         ("remarkable", "reMarkable", "remarkable"),
         ("sync", "Sync", "sync"),
+        ("llm", "LLM provider", "llm"),
         ("processing", "Processing (AI)", "processing"),
         ("ocr", "OCR", "ocr"),
         ("obsidian", "Obsidian vault", "obsidian"),
