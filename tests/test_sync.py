@@ -193,6 +193,40 @@ class TestSyncState:
 
 
 # =====================
+# _cache_rm_bytes helper
+# =====================
+
+class TestCacheRmBytes:
+    def test_writes_bytes_to_expected_path(self, tmp_path, monkeypatch):
+        import src.sync.engine as engine_mod
+        monkeypatch.setattr(engine_mod, "_RM_CACHE_ROOT", tmp_path / "cache")
+
+        engine_mod._cache_rm_bytes("abc123", b"fake rm content")
+
+        cached = (tmp_path / "cache" / "abc123" / "last.rm").read_bytes()
+        assert cached == b"fake rm content"
+
+    def test_overwrites_on_second_call(self, tmp_path, monkeypatch):
+        import src.sync.engine as engine_mod
+        monkeypatch.setattr(engine_mod, "_RM_CACHE_ROOT", tmp_path / "cache")
+
+        engine_mod._cache_rm_bytes("doc-x", b"first")
+        engine_mod._cache_rm_bytes("doc-x", b"second")
+
+        cached = (tmp_path / "cache" / "doc-x" / "last.rm").read_bytes()
+        assert cached == b"second"
+
+    def test_creates_parent_dirs(self, tmp_path, monkeypatch):
+        import src.sync.engine as engine_mod
+        deeply_nested = tmp_path / "a" / "b" / "c"
+        monkeypatch.setattr(engine_mod, "_RM_CACHE_ROOT", deeply_nested)
+
+        engine_mod._cache_rm_bytes("d1", b"\x00\x01\x02")
+
+        assert (deeply_nested / "d1" / "last.rm").exists()
+
+
+# =====================
 # SyncEngine
 # =====================
 

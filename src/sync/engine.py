@@ -11,6 +11,10 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Cache root for persisted .rm pages. The bridge preview endpoint reads
+# from here — keeping it module-level makes it easy to monkeypatch in tests.
+_RM_CACHE_ROOT = Path("~/.remark-bridge/cache").expanduser()
+
 import anthropic
 
 from src.config import AppConfig, resolve_path
@@ -32,6 +36,19 @@ from src.remarkable.formats import Notebook, extract_strokes_by_color, parse_not
 from src.sync.state import SyncState
 
 logger = logging.getLogger(__name__)
+
+
+def _cache_rm_bytes(doc_id: str, rm_bytes: bytes) -> None:
+    """Persist the latest .rm page so the bridge API can render previews.
+
+    Only the first page is stored — the preview endpoint renders page 0
+    and doesn't need the full document. Writing it here, right after
+    download, means the file is available even when OCR or processing
+    subsequently fail.
+    """
+    cache_dir = _RM_CACHE_ROOT / doc_id
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "last.rm").write_bytes(rm_bytes)
 
 
 @dataclass
@@ -437,6 +454,22 @@ class SyncEngine:
 
             # Parse .rm files
             pages = parse_notebook(resolved.local_dir, doc.id, resolved.page_ids)
+
+            # Cache the first page's raw bytes so the bridge preview endpoint
+            # can render them later without re-downloading the whole document.
+            if resolved.page_ids:
+                from src.remarkable.formats import _find_rm_file
+                first_rm = _find_rm_file(
+                    resolved.local_dir, doc.id, resolved.page_ids[0]
+                )
+                if first_rm is not None:
+                    try:
+                        _cache_rm_bytes(doc.id, first_rm.read_bytes())
+                    except Exception as _cache_err:
+                        logger.warning(
+                            "Could not cache .rm bytes for %s: %s",
+                            doc.id[:8], _cache_err,
+                        )
 
             # Build Notebook dataclass
             notebook = Notebook(
