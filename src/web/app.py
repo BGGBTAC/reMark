@@ -146,6 +146,37 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # (e.g. api_notes, api_search) can read vault paths and other settings
     # without relying on the create_app closure.
     app.state.config = config
+
+    # Build a SearchQuery if the config has search enabled and a usable
+    # backend is configured. Failures are non-fatal — the /api/search
+    # endpoint degrades to 503 when search_query is None, which is the
+    # right behaviour for installs that haven't set up an embedding
+    # backend yet.
+    app.state.search_query = None
+    if config.search.enabled:
+        try:
+            from src.config import resolve_path as _resolve_path
+            from src.search.backends import build_backend as _build_backend
+            from src.search.index import VectorIndex as _VectorIndex
+            from src.search.query import SearchQuery as _SearchQuery
+
+            _backend = _build_backend(
+                config.search.backend,
+                model=config.search.model,
+                api_key_env=config.search.api_key_env,
+            )
+            _index = _VectorIndex(
+                db_path=_resolve_path(config.sync.state_db),
+                dimension=_backend.dimension,
+            )
+            app.state.search_query = _SearchQuery(
+                backend=_backend,
+                index=_index,
+            )
+            logger.info("Search query initialised (backend=%s)", config.search.backend)
+        except Exception as _search_exc:  # noqa: BLE001
+            logger.warning("Search query unavailable: %s", _search_exc)
+
     try:
         web_auth.bootstrap_admin(_early_state)
     except Exception as exc:  # noqa: BLE001

@@ -144,6 +144,39 @@ class TestApiSearch:
         )
         assert resp.status_code == 401
 
+    def test_search_query_attribute_always_set_by_create_app(self, tmp_path):
+        """create_app always sets app.state.search_query (None or a real instance)."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        cfg = {
+            "sync": {"state_db": str(state_dir / "state.db")},
+            "obsidian": {"vault_path": str(vault)},
+            # search.enabled defaults to False — search_query should be None
+        }
+        app = create_app(AppConfig(**cfg))
+        # The attribute must exist regardless of whether search is configured.
+        assert hasattr(app.state, "search_query")
+        # No backend configured → None
+        assert app.state.search_query is None
+
+    def test_search_query_none_when_search_disabled(self, tmp_path):
+        """search_query stays None when search.enabled is False."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        cfg = {
+            "sync": {"state_db": str(state_dir / "state.db")},
+            "obsidian": {"vault_path": str(vault)},
+            "search": {"enabled": False},
+        }
+        app = create_app(AppConfig(**cfg))
+        assert app.state.search_query is None
+
     def test_503_when_search_not_configured(self, tmp_path):
         """Without a search_query on app.state, endpoint returns 503."""
         vault = tmp_path / "vault"
