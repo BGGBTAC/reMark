@@ -133,6 +133,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         title=config.web.app_name, openapi_url=None, lifespan=lifespan,
     )
 
+    # Eagerly initialize the SyncState singleton so _auth_check and
+    # the audit middleware don't crash on cold-start requests (they
+    # read app.state.sync_state before any route handler calls
+    # get_state()).
+    from src.config import resolve_path
+
+    _early_state = SyncState(resolve_path(config.sync.state_db))
+    _early_state._shared = True
+    app.state.sync_state = _early_state
+    try:
+        web_auth.bootstrap_admin(_early_state)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("admin bootstrap failed: %s", exc)
+
     # Session cookies — user_id + username only. The secret_key comes
     # from config; fall back to a random per-process value so an
     # unconfigured fresh install still boots (sessions reset on
@@ -247,28 +261,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         )
 
     def get_state() -> SyncState:
-        """Return a process-wide SyncState singleton.
+        """Return the process-wide SyncState singleton.
 
-        Constructing a ``SyncState`` runs ``_ensure_schema`` which
-        acquires the WAL write lock. On hot routes (``/api/*``, every
-        dashboard refresh) that would stall the async event loop and
-        race the sync daemon for the lock. Cache one connection per
-        process; callers must NOT ``close()`` it.
+        Eagerly initialized above during ``create_app`` so auth
+        middleware and ``_auth_check`` can read it from the very
+        first request. Route handlers still call ``get_state()`` by
+        convention; callers must NOT ``close()`` the returned
+        instance.
         """
-        from src.config import resolve_path
-
-        cached = getattr(app.state, "sync_state", None)
-        if cached is None:
-            cached = SyncState(resolve_path(config.sync.state_db))
-            cached._shared = True  # marks close() as a no-op
-            app.state.sync_state = cached
-            # v0.7+ bootstrap — seeds an admin user on a fresh DB.
-            # Safe to call on every restart (no-op when users exist).
-            try:
-                web_auth.bootstrap_admin(cached)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("admin bootstrap failed: %s", exc)
-        return cached
+        return app.state.sync_state
 
     def _scope_user_id(request: Request) -> int | None:
         """Return the user_id the current viewer should see rows for.
