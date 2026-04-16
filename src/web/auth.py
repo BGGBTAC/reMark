@@ -97,11 +97,19 @@ def authenticate(
 
 
 def current_user(request: Request) -> dict[str, Any] | None:
-    """Resolve the session cookie to a user dict, or ``None``."""
+    """Resolve the session cookie to a user dict, or ``None``.
+
+    Returns ``None`` when the SyncState singleton hasn't been
+    initialized yet (e.g. middleware firing before the first route
+    handler calls ``get_state()``), avoiding an ``AttributeError``
+    that would surface as a 500 on cold-start requests.
+    """
     user_id = request.session.get("user_id") if hasattr(request, "session") else None
     if user_id is None:
         return None
-    state = request.app.state.sync_state
+    state = getattr(request.app.state, "sync_state", None)
+    if state is None:
+        return None
     return state.get_user_by_id(int(user_id))
 
 
