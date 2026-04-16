@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.llm.client import LLMClient, LLMMessage, LLMResponse
 from src.processing.actions import (
     ActionExtractor,
     ActionItem,
@@ -16,7 +17,28 @@ from src.processing.structurer import NoteStructurer, StructuredNote, _extract_t
 from src.processing.summarizer import NoteSummarizer, NoteSummary, _fallback_summary
 from src.processing.tagger import NoteTagger, _extract_keyword_tags, _parse_tag_response
 
-# -- Helper to mock Anthropic client --
+
+class _StubLLM(LLMClient):
+    """Test helper — records complete() calls and returns canned text."""
+
+    provider = "stub"
+
+    def __init__(self, text: str = ""):
+        self._text = text
+        self.calls: list = []
+
+    async def complete(self, system, messages, model, max_tokens=4096):
+        self.calls.append((system, messages, model, max_tokens))
+        return LLMResponse(
+            text=self._text, input_tokens=1, output_tokens=1,
+            provider=self.provider, model=model,
+        )
+
+    async def complete_vision(self, system, image, prompt, model, max_tokens=2048):
+        raise NotImplementedError
+
+
+# -- Helper to mock Anthropic client (used by actions, tagger, summarizer tests) --
 
 def mock_anthropic_response(text: str) -> AsyncMock:
     """Create a mock Anthropic client that returns the given text."""
@@ -34,8 +56,8 @@ def mock_anthropic_response(text: str) -> AsyncMock:
 class TestNoteStructurer:
     @pytest.mark.asyncio
     async def test_structure_returns_result(self):
-        client = mock_anthropic_response("# Meeting Notes\n\nDiscussed project timeline.")
-        structurer = NoteStructurer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="# Meeting Notes\n\nDiscussed project timeline.")
+        structurer = NoteStructurer(llm=llm, model="claude-sonnet-4-20250514")
 
         result = await structurer.structure(
             "meeting notes discussed project timeline",
@@ -48,8 +70,8 @@ class TestNoteStructurer:
 
     @pytest.mark.asyncio
     async def test_structure_empty_text(self):
-        client = mock_anthropic_response("")
-        structurer = NoteStructurer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="")
+        structurer = NoteStructurer(llm=llm, model="claude-sonnet-4-20250514")
 
         result = await structurer.structure("", "Empty Notebook")
 
@@ -58,21 +80,33 @@ class TestNoteStructurer:
 
     @pytest.mark.asyncio
     async def test_structure_incremental_empty_new(self):
-        client = mock_anthropic_response("")
-        structurer = NoteStructurer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="")
+        structurer = NoteStructurer(llm=llm, model="claude-sonnet-4-20250514")
 
         result = await structurer.structure_incremental("Existing content", "")
         assert result == "Existing content"
 
     @pytest.mark.asyncio
     async def test_structure_uses_correct_model(self):
-        client = mock_anthropic_response("# Title\n\nContent")
-        structurer = NoteStructurer(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="# Title\n\nContent")
+        structurer = NoteStructurer(llm=llm, model="claude-sonnet-4-20250514")
 
         await structurer.structure("some text", "Test")
 
-        call_args = client.messages.create.call_args
-        assert call_args.kwargs["model"] == "claude-sonnet-4-20250514"
+        assert llm.calls
+        # third element of the recorded tuple is model
+        assert llm.calls[0][2] == "claude-sonnet-4-20250514"
+
+    @pytest.mark.asyncio
+    async def test_structurer_uses_llm_client(self):
+        llm = _StubLLM(text="# Title\n\nBody")
+        structurer = NoteStructurer(llm=llm, model="llama3.1")
+
+        out = await structurer.structure("handwritten text here", "My Notebook")
+
+        assert "Title" in out.content_md or "Body" in out.content_md
+        assert llm.calls
+        assert llm.calls[0][2] == "llama3.1"  # model forwarded correctly
 
 
 class TestExtractTitle:
