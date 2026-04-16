@@ -12,7 +12,7 @@
 
 Write on your reMarkable. reMark handles the rest — your handwritten notes become structured, searchable Markdown in Obsidian (optionally mirrored to OneNote), complete with tags, summaries, and action items. Push responses back to the tablet, query your vault in natural language, drive Microsoft To Do / Calendar / Teams, and run the whole thing with a web dashboard + mobile PWA.
 
-> **Latest:** v0.7.0 — Multi-user web UI with bcrypt sessions and per-user vault isolation, a structured audit log with `/audit` + CSV export, and scheduled Claude-powered reports pushed to Teams / Notion / vault. See [CHANGELOG.md](CHANGELOG.md) for the full history.
+> **Latest:** v0.7.1 — Patch: passlib→bcrypt swap, pre-0.7 no-auth compat restored, eager SyncState init fixes ISE on cold start, cross-thread SQLite fix. See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 <p align="center">
   <a href="https://github.com/BGGBTAC/reMark/wiki/Web-Dashboard">
