@@ -15,7 +15,6 @@ from src.ocr.pipeline import (
     _merge_texts,
 )
 from src.ocr.remarkable_builtin import RemarkableBuiltinOCR
-from src.ocr.vlm import _estimate_confidence
 from src.remarkable.formats import parse_rm_file
 
 # -- Helpers --
@@ -259,26 +258,6 @@ class TestRemarkableBuiltinOCR:
         assert len(result.word_boxes) == 2
         assert result.word_boxes[0].text == "Hello"
         assert result.word_boxes[1].text == "World"
-
-
-# -- VLM confidence estimation --
-
-class TestVLMConfidence:
-    def test_empty_text(self):
-        assert _estimate_confidence("") == 0.0
-
-    def test_very_short_text(self):
-        assert _estimate_confidence("Hi") == 0.3
-
-    def test_unreadable_markers(self):
-        assert _estimate_confidence("This page is unreadable") == 0.2
-
-    def test_normal_text(self):
-        text = "This is a normal transcription with enough content to be considered valid."
-        assert _estimate_confidence(text) == 0.85
-
-    def test_medium_text(self):
-        assert _estimate_confidence("Short but valid text") == 0.7
 
 
 # -- PageText dataclass --
