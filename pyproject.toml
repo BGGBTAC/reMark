@@ -1,6 +1,6 @@
 [project]
 name = "remark-bridge"
-version = "0.7.0"
+version = "0.7.1"
 description = "Bidirectional sync between reMarkable tablets and an Obsidian knowledge base with intelligent note processing"
 readme = "README.md"
 license = "CC-BY-NC-4.0"

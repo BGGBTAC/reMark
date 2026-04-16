@@ -4,6 +4,31 @@ All notable changes to **reMark** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) and its commits group into the
 phases described in the release notes.
 
+## [0.7.1] — 2026-04-16
+
+Patch release — four fixes discovered during the 0.7.0 rollout.
+
+### Fixed
+- **passlib → bcrypt**: passlib 1.7 can't initialise its bcrypt
+  backend against bcrypt 4.x (removed `__about__` probe). Replaced
+  with direct `bcrypt.hashpw` / `bcrypt.checkpw` — fewer moving
+  parts, no version conflict. Dependency changed from
+  `passlib[bcrypt]>=1.7.4` to `bcrypt>=4.0`.
+- **Pre-0.7 no-auth installs broken**: `_auth_check` required a
+  session even when `web.username` / `web.password` were empty. Now
+  restores the pre-0.7 open behavior: when neither Basic auth nor a
+  session is configured, an anonymous admin context is returned.
+  Admin-only routes (`/users`, `/audit`, `/reports`) still require a
+  real session login.
+- **ISE on cold-start requests**: `current_user()` accessed
+  `app.state.sync_state` before any route handler had initialised
+  it. Moved the SyncState singleton + admin bootstrap into
+  `create_app()` so the attribute exists before any middleware fires.
+- **Cross-thread SQLite error**: the eager SyncState init creates
+  the connection in the main thread, but TestClient + uvicorn workers
+  access it from request threads. Added `check_same_thread=False` —
+  safe under WAL mode with FastAPI's sequential request handling.
+
 ## [0.7.0] — 2026-04-15
 
 "Multi-user & reporting". Three big additions: per-user accounts with
