@@ -241,8 +241,8 @@ class TestActionExtractor:
         api_response = json.dumps([
             {"task": "Review architecture", "type": "task", "priority": "high"},
         ])
-        client = mock_anthropic_response(api_response)
-        extractor = ActionExtractor(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text=api_response)
+        extractor = ActionExtractor(llm, "claude-sonnet-4-20250514")
 
         actions = await extractor.extract("TODO: fix the tests\nReview architecture for v2")
 
@@ -253,11 +253,26 @@ class TestActionExtractor:
 
     @pytest.mark.asyncio
     async def test_extract_empty_text(self):
-        client = mock_anthropic_response("[]")
-        extractor = ActionExtractor(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="[]")
+        extractor = ActionExtractor(llm, "claude-sonnet-4-20250514")
 
         actions = await extractor.extract("")
         assert len(actions) == 0
+
+    @pytest.mark.asyncio
+    async def test_action_extractor_uses_llm_client(self):
+        api_response = json.dumps([
+            {"task": "Deploy to prod", "type": "task", "priority": "high"},
+        ])
+        llm = _StubLLM(text=api_response)
+        extractor = ActionExtractor(llm, "llama3.1")
+
+        actions = await extractor.extract("ACTION: Deploy to prod by EOD")
+
+        tasks = [a.task for a in actions]
+        assert "Deploy to prod" in tasks
+        assert llm.calls
+        assert llm.calls[0][2] == "llama3.1"  # model forwarded correctly
 
 
 # =====================

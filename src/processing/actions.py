@@ -11,8 +11,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-import anthropic
-
+from src.llm.client import LLMClient, LLMMessage
 from src.remarkable.formats import StrokeGroup
 
 logger = logging.getLogger(__name__)
@@ -56,8 +55,8 @@ class ActionItem:
 class ActionExtractor:
     """Extract action items from notes using text patterns and the Anthropic API."""
 
-    def __init__(self, client: anthropic.AsyncAnthropic, model: str):
-        self._client = client
+    def __init__(self, llm: LLMClient, model: str):
+        self._llm = llm
         self._model = model
 
     async def extract(
@@ -107,15 +106,14 @@ class ActionExtractor:
             user_content += f"\n\n--- Color Annotations ---\n{annotation_summary}"
 
         try:
-            response = await self._client.messages.create(
+            response = await self._llm.complete(
+                system=EXTRACTION_PROMPT,
+                messages=[LLMMessage(role="user", content=user_content)],
                 model=self._model,
                 max_tokens=4096,
-                system=EXTRACTION_PROMPT,
-                messages=[{"role": "user", "content": user_content}],
             )
 
-            raw = response.content[0].text.strip()
-            return _parse_action_response(raw)
+            return _parse_action_response(response.text.strip())
 
         except Exception as e:
             logger.warning("API action extraction failed: %s", e)
