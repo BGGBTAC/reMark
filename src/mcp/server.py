@@ -327,7 +327,7 @@ async def _tool_generate_response(
 async def _tool_sync_now(config: AppConfig) -> list[TextContent]:
     """Trigger an immediate sync cycle."""
     # Importing here to avoid circular deps and heavy init at startup
-    from src.ocr.pipeline import OCRPipeline
+    from src.ocr.pipeline import build_pipeline
     from src.remarkable.auth import AuthManager
     from src.remarkable.cloud import RemarkableCloud
     from src.remarkable.documents import DocumentManager
@@ -336,7 +336,7 @@ async def _tool_sync_now(config: AppConfig) -> list[TextContent]:
     try:
         auth = AuthManager(resolve_path(config.remarkable.device_token_path))
         engine = SyncEngine(config)
-        ocr_pipeline = OCRPipeline(config.ocr)
+        ocr_pipeline = build_pipeline(config, llm_client=engine._get_llm_client())
         download_dir = resolve_path(config.sync.state_db).parent / "downloads"
 
         async with RemarkableCloud(auth) as cloud:

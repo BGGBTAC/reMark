@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from src.config import OCRConfig
+from src.config import AppConfig, OCRConfig
 from src.remarkable.formats import (
     PageContent,
     extract_typed_text,
@@ -236,6 +236,60 @@ class OCRPipeline:
             engine_used=sources[0] if sources else "none",
             sources=sources,
         )
+
+
+def build_pipeline(
+    config: AppConfig,
+    llm_client=None,
+) -> "OCRPipeline":
+    """Construct an OCRPipeline from AppConfig.
+
+    ``llm_client`` is optional — callers that already hold an LLMClient
+    (e.g. SyncEngine) pass it here so VLMOcr reuses the same connection
+    rather than building a second one.  When None, a client is built from
+    config on demand (Anthropic if api key is set, etc.).
+    """
+    from src.config import LLMConfig  # avoid circular at module level
+
+    primary: OCREngine | None = None
+    fallback: OCREngine | None = None
+
+    def _make_engine(engine_name: str) -> OCREngine | None:
+        if engine_name == "vlm":
+            from src.ocr.vlm import VLMOcr
+
+            client = llm_client
+            if client is None:
+                import os
+                from src.llm.factory import build_llm_client
+                client = build_llm_client(
+                    config.llm,
+                    anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+                )
+
+            # When running Ollama, use the dedicated vision model rather than
+            # whatever is set in ocr.vlm.model (which is an Anthropic model name).
+            if config.llm.provider == "ollama":
+                vlm_model = config.llm.ollama.vision_model
+            else:
+                vlm_model = config.ocr.vlm.model
+
+            return VLMOcr(llm=client, model=vlm_model)
+
+        if engine_name == "google_vision":
+            from src.ocr.google_vision import GoogleVisionOCR
+            return GoogleVisionOCR(config.ocr.google_vision)
+
+        if engine_name == "remarkable_builtin":
+            from src.ocr.remarkable_builtin import RemarkableBuiltinOCR
+            return RemarkableBuiltinOCR()
+
+        return None  # "none" or unknown
+
+    primary = _make_engine(config.ocr.primary)
+    fallback = _make_engine(config.ocr.fallback)
+
+    return OCRPipeline(config.ocr, primary=primary, fallback=fallback)
 
 
 def _merge_texts(typed: str, ocr: str) -> str:

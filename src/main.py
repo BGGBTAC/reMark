@@ -52,9 +52,9 @@ def _get_auth(config: AppConfig, device_id: str = "default"):
     return AuthManager(device_token_path_for(device_id, base_dir))
 
 
-def _get_ocr_pipeline(config: AppConfig):
-    from src.ocr.pipeline import OCRPipeline
-    return OCRPipeline(config.ocr)
+def _get_ocr_pipeline(config: AppConfig, llm_client=None):
+    from src.ocr.pipeline import build_pipeline
+    return build_pipeline(config, llm_client=llm_client)
 
 
 @click.group()
@@ -179,7 +179,7 @@ async def _sync_once(config: AppConfig) -> None:
     from src.sync.engine import SyncEngine
 
     engine = SyncEngine(config)
-    ocr_pipeline = _get_ocr_pipeline(config)
+    ocr_pipeline = _get_ocr_pipeline(config, llm_client=engine._get_llm_client())
     download_dir = resolve_path(config.sync.state_db).parent / "downloads"
 
     # Legacy single-device path: no ``devices`` list configured, run once.
@@ -248,7 +248,7 @@ async def _sync_continuous(config: AppConfig) -> None:
 
     auth = _get_auth(config)
     engine = SyncEngine(config)
-    ocr_pipeline = _get_ocr_pipeline(config)
+    ocr_pipeline = _get_ocr_pipeline(config, llm_client=engine._get_llm_client())
     scheduler = SyncScheduler(engine, config)
 
     click.echo("Starting continuous sync (Ctrl+C to stop)...")
@@ -276,7 +276,7 @@ async def _watch(config: AppConfig) -> None:
 
     auth = _get_auth(config)
     engine = SyncEngine(config)
-    ocr_pipeline = _get_ocr_pipeline(config)
+    ocr_pipeline = _get_ocr_pipeline(config, llm_client=engine._get_llm_client())
     watcher = RealtimeWatcher(engine, auth, config)
 
     click.echo("Starting real-time watcher (Ctrl+C to stop)...")
@@ -417,7 +417,7 @@ async def _process_single(config: AppConfig, notebook_name: str) -> None:
 
     auth = _get_auth(config)
     engine = SyncEngine(config)
-    ocr_pipeline = _get_ocr_pipeline(config)
+    ocr_pipeline = _get_ocr_pipeline(config, llm_client=engine._get_llm_client())
     download_dir = resolve_path(config.sync.state_db).parent / "downloads"
 
     async with RemarkableCloud(auth) as cloud:
@@ -1168,7 +1168,7 @@ async def _migrate_all(config: AppConfig) -> None:
 
     auth = _get_auth(config)
     engine = SyncEngine(config)
-    ocr_pipeline = _get_ocr_pipeline(config)
+    ocr_pipeline = _get_ocr_pipeline(config, llm_client=engine._get_llm_client())
     download_dir = resolve_path(config.sync.state_db).parent / "downloads"
 
     async with RemarkableCloud(auth) as cloud:
