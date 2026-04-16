@@ -49,7 +49,7 @@ Write on your reMarkable. reMark handles the rest — your handwritten notes bec
 ### Integrations
 - **Microsoft Outlook** — action items → Microsoft To Do, deadlines → Outlook Calendar
 - **Microsoft Teams** _(v0.3)_ — daily/weekly digest Adaptive Cards, meeting ↔ note correlation
-- **MCP server** — interact with your notes directly from Claude Desktop or Claude Code
+- **MCP server** — interact with your notes directly from any MCP-compatible client
 
 ### Web + PWA
 - **Web dashboard** _(v0.3)_ — FastAPI + HTMX + Alpine.js + Tailwind, no build step
@@ -319,7 +319,7 @@ remark-bridge push report.pdf --folder "Work"
 # Check sync status + API cost summary
 remark-bridge status
 
-# Start MCP server (for Claude Desktop / Claude Code)
+# Start MCP server (for any MCP-compatible client)
 remark-bridge serve
 
 # Start the web dashboard + PWA (v0.3)
@@ -552,7 +552,7 @@ reMark/
 │   │   ├── pipeline.py             # OCR orchestrator (strategy pattern)
 │   │   ├── remarkable_builtin.py   # MyScript conversion reader
 │   │   ├── google_vision.py        # Google Cloud Vision backend
-│   │   ├── vlm.py                  # Claude / GPT-4o vision backend
+│   │   ├── vlm.py                  # Vision LLM backend (Anthropic / OpenAI / Ollama)
 │   │   └── renderer.py             # .rm → PNG/SVG rendering
 │   │
 │   ├── processing/                 # Intelligent note processing
@@ -586,7 +586,7 @@ reMark/
 │   │   ├── chunker.py              # Markdown-aware chunking
 │   │   ├── index.py                # sqlite-vec VectorIndex
 │   │   ├── indexer.py              # Chunking + embedding orchestrator
-│   │   └── query.py                # Semantic query + Claude synthesis
+│   │   └── query.py                # Semantic query + LLM synthesis
 │   │
 │   ├── integrations/               # External integrations
 │   │   └── microsoft/              # Microsoft Graph
@@ -614,7 +614,7 @@ reMark/
 │   │   └── builtin/                # meeting / daily / project-review
 │   │
 │   └── mcp/                        # MCP server
-│       └── server.py               # Tools for Claude Desktop / Code
+│       └── server.py               # Tools for MCP-compatible clients
 │
 ├── tests/                          # Pytest suite across every module
 ├── scripts/                        # Setup + connection test helpers

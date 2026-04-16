@@ -154,13 +154,13 @@ CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
 
--- Scheduled reports: periodic Claude-powered summaries pushed to
+-- Scheduled reports: periodic LLM-generated summaries pushed to
 -- configured output channels (Teams / Notion / Vault).
 CREATE TABLE IF NOT EXISTS reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     schedule TEXT NOT NULL,                 -- cron string
-    prompt TEXT NOT NULL,                   -- what to ask Claude
+    prompt TEXT NOT NULL,                   -- what to ask the LLM
     channels TEXT NOT NULL,                 -- JSON array: ["teams","notion","vault"]
     enabled INTEGER NOT NULL DEFAULT 1,
     last_run_at TEXT,

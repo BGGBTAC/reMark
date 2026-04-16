@@ -101,7 +101,7 @@ class ActionExtractor:
         text: str,
         color_annotations: dict[str, list[StrokeGroup]] | None,
     ) -> list[ActionItem]:
-        """Use Claude to extract action items."""
+        """Use the configured LLM to extract action items."""
         user_content = text
 
         if color_annotations:

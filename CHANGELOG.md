@@ -120,7 +120,7 @@ Patch release — four fixes discovered during the 0.7.0 rollout.
 ## [0.7.0] — 2026-04-15
 
 "Multi-user & reporting". Three big additions: per-user accounts with
-vault isolation, a structured audit log, and scheduled Claude-powered
+vault isolation, a structured audit log, and scheduled LLM-backed
 summaries pushed to Teams / Notion / vault.
 
 ### Added
@@ -147,7 +147,7 @@ summaries pushed to Teams / Notion / vault.
 - **Scheduled reports** (`src/reports/`). New `reports` state table
   with schedule / prompt / channels / next_run_at bookkeeping. The
   runner builds context from recent synced notes + sync stats, calls
-  Claude with a concise system prompt, dispatches the rendered
+  the configured LLM with a concise system prompt, dispatches the rendered
   Markdown to every configured channel. Three channels implemented:
     - `vault` — dated Markdown note under `Reports/`
     - `teams` — Adaptive Card via `microsoft.teams.webhook_url`
@@ -554,7 +554,7 @@ Response push, semantic search, Outlook integration, foundation fixes.
   generation, analysis, and format selection.
 - **Semantic search / RAG** (`src/search/`) — strategy-pattern embedding
   backends (Voyage, OpenAI, local sentence-transformers), `sqlite-vec`
-  vector store, Markdown-aware chunker, Claude-synthesized answers with
+  vector store, Markdown-aware chunker, LLM-synthesized answers with
   wiki-link citations.
 - **Microsoft Outlook integration**
   (`src/integrations/microsoft/`) — MSAL device-code flow, Microsoft To
@@ -588,7 +588,7 @@ Initial release. Unidirectional sync from reMarkable → Obsidian.
 - Real-time WebSocket watcher.
 - CLI with `setup`, `sync`, `watch`, `status`, `process`, `push`, `serve`,
   `migrate`.
-- MCP server with 6 tools for Claude Desktop / Code.
+- MCP server with 6 tools for any MCP-compatible client.
 - systemd service and timer for VPS deployment.
 
 ### Tests

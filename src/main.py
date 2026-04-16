@@ -1248,7 +1248,7 @@ async def _push_file(config: AppConfig, file_path: Path, folder: str) -> None:
 @cli.command()
 @click.pass_context
 def serve(ctx: click.Context) -> None:
-    """Start the MCP server for Claude Desktop / Claude Code."""
+    """Start the MCP server for any MCP-compatible client."""
     config = ctx.obj["config"]
     _setup_logging(config)
 

@@ -1,7 +1,7 @@
-"""MCP server exposing reMark tools for Claude Desktop / Claude Code.
+"""MCP server exposing reMark tools for any MCP-compatible client.
 
 Provides tools to trigger sync, search notes, manage actions,
-and interact with the reMarkable vault directly from Claude.
+and interact with the reMarkable vault via the Model Context Protocol.
 """
 
 from __future__ import annotations
@@ -141,7 +141,7 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Generate a response document (PDF or native notebook) for a specific "
                 "synced note and push it back to the reMarkable tablet. Optionally "
-                "uses Claude to answer questions found in the note."
+                "uses the configured LLM to answer questions found in the note."
             ),
             inputSchema={
                 "type": "object",

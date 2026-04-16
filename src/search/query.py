@@ -1,5 +1,5 @@
 """Query pipeline: embed a question, retrieve relevant chunks,
-optionally synthesize an answer with Claude.
+optionally synthesize an answer via the configured LLM.
 
 Supports three retrieval modes:
 
@@ -91,7 +91,7 @@ class SearchQuery:
             min_score: Minimum similarity score (0..1). Applied to the
                 semantic leg only — BM25 scores follow a different scale
                 so we never prune them before fusion.
-            synthesize: If True, use Claude to write a grounded answer.
+            synthesize: If True, use the configured LLM to write a grounded answer.
             mode: ``"semantic"``, ``"bm25"``, or ``"hybrid"`` (default).
         """
         if not query.strip():
@@ -178,7 +178,7 @@ class SearchQuery:
         return filtered[:top_k]
 
     async def _synthesize(self, query: str, hits: list[SearchHit]) -> str:
-        """Use Claude to write a grounded answer from the retrieved chunks."""
+        """Use the configured LLM to write a grounded answer from the retrieved chunks."""
         context_parts = []
         for i, hit in enumerate(hits, 1):
             note_name = hit.vault_path.rsplit("/", 1)[-1].removesuffix(".md")
