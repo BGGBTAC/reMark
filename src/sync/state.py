@@ -417,6 +417,55 @@ class SyncState:
         )
         self.conn.commit()
 
+    def get_sync_state_by_vault_path(self, vault_path: str) -> dict | None:
+        """Look up sync metadata for a note by its vault-relative path.
+
+        Returns None when the path hasn't been synced yet.
+        The ``doc_id`` field is included so callers can locate the cached
+        .rm file on disk via ``load_last_rm_bytes``.
+        """
+        row = self.conn.execute(
+            "SELECT doc_id, device_id, last_synced_at, status "
+            "FROM sync_state WHERE vault_path = ? LIMIT 1",
+            (vault_path,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "doc_id": row["doc_id"],
+            "device_id": row["device_id"],
+            "synced_at": row["last_synced_at"],
+            # pending_push isn't tracked column-level; the reverse_push_queue
+            # is the authoritative source, but that's a heavier query than we
+            # want here. Return False statically — callers can check the queue
+            # directly if they need real pending state.
+            "pending_push": False,
+            # Errors are recorded via mark_error / status='error'. Expose
+            # the status string so the caller can surface it.
+            "last_error": row["status"] if row["status"] == "error" else None,
+        }
+
+    def load_last_rm_bytes(self, vault_path: str) -> bytes | None:
+        """Return the cached .rm bytes for a vault path, or None.
+
+        The sync engine persists the latest .rm bytes to
+        ``~/.remark-bridge/cache/<doc_id>/last.rm`` after each successful
+        page download. If that file is absent the preview endpoint returns
+        404 — the note will be cached on the next full sync cycle.
+        """
+        row = self.get_sync_state_by_vault_path(vault_path)
+        if row is None:
+            return None
+        doc_id = row.get("doc_id")
+        if not doc_id:
+            return None
+        cache_path = (
+            Path("~/.remark-bridge/cache").expanduser() / doc_id / "last.rm"
+        )
+        if not cache_path.exists():
+            return None
+        return cache_path.read_bytes()
+
     def mark_response_sent(self, doc_id: str) -> None:
         """Mark a response as successfully pushed."""
         self.conn.execute(

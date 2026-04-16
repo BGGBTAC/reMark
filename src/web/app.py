@@ -142,6 +142,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     _early_state = SyncState(resolve_path(config.sync.state_db))
     _early_state._shared = True
     app.state.sync_state = _early_state
+    # Expose the resolved config on app.state so external router modules
+    # (e.g. api_notes, api_search) can read vault paths and other settings
+    # without relying on the create_app closure.
+    app.state.config = config
     try:
         web_auth.bootstrap_admin(_early_state)
     except Exception as exc:  # noqa: BLE001
@@ -1307,6 +1311,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             payload,
             status_code=200 if ok else 503,
         )
+
+    # -- Extended Bridge API routers (Obsidian plugin v0.2) ---------------
+    from src.web import api_notes, api_search
+
+    app.include_router(api_notes.router)
+    app.include_router(api_search.router)
 
     return app
 
