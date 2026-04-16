@@ -115,6 +115,10 @@ class SyncConfig(BaseModel):
     push_responses: bool = True
     response_format: Literal["pdf", "notebook"] = "pdf"
     after_date: str | None = None
+    # Blobs larger than this are streamed to a temp file rather than held in RAM.
+    # 50-page notebooks can run 200 MB+; spilling keeps RSS bounded.
+    streaming_threshold_bytes: int = 5 * 1024 * 1024  # 5 MB
+    temp_dir: str = "~/.remark-bridge/tmp"
 
 
 class ResponseConfig(BaseModel):

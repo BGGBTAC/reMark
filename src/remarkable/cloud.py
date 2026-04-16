@@ -337,6 +337,46 @@ class RemarkableCloud:
         blob_resp = await self._request("GET", signed_url)
         return blob_resp.content
 
+    async def _fetch_blob_streaming(
+        self,
+        storage: str,
+        blob_hash: str,
+        headers: dict[str, str],
+        threshold_bytes: int,
+        temp_dir: str | Path,
+    ) -> tuple[str | None, bytes | None]:
+        """Streaming variant of _fetch_blob for large blobs.
+
+        Returns (None, bytes) when the blob fits under the threshold, or
+        (temp_path, None) when it spilled to disk. Callers that receive a
+        temp_path are responsible for unlinking it after use.
+
+        Existing callers continue to use _fetch_blob; this method exists so
+        the engine can opt in to bounded-memory downloads for large notebooks.
+        Downstream migration can happen incrementally in follow-up tasks.
+        """
+        from src.remarkable.streaming import download_blob as _dl
+
+        url = f"{storage}/sync/v2/signed-urls/downloads"
+        payload = {"relative_path": blob_hash, "http_method": "GET"}
+        resp = await self._request("PUT", url, headers=headers, json=payload)
+        url_data = resp.json()
+        signed_url = url_data.get("url", "")
+
+        if not signed_url:
+            raise CloudError(f"No download URL for blob {blob_hash[:12]}")
+
+        def _streamer(method: str, url: str):  # noqa: ANN202
+            return self._client.stream(method, url)
+
+        return await _dl(
+            _streamer,
+            method="GET",
+            url=signed_url,
+            threshold_bytes=threshold_bytes,
+            temp_dir=temp_dir,
+        )
+
     def _parse_root_index(self, data: bytes) -> SyncRoot:
         """Parse the sync 1.5 root index format.
 
