@@ -1137,6 +1137,56 @@ async def _reindex(config: AppConfig) -> None:
     )
 
 
+@cli.command("bench")
+@click.option("--chunks", default=1000, show_default=True, help="How many synthetic chunks to embed.")
+@click.option("--stub", is_flag=True, help="Use a zero-latency stub backend instead of the real one.")
+def bench_cmd(chunks: int, stub: bool) -> None:
+    """Micro-benchmark: embed N synthetic chunks and report throughput.
+
+    Uses the stub flag for offline testing. Without it, loads the
+    configured local model — no API key required.
+    """
+    import resource
+    import time
+
+    async def _run() -> None:
+        class _Stub:
+            name = "stub"
+            dimension = 4
+            max_batch_size = 64
+
+            async def embed(self, texts: list[str]) -> list[list[float]]:
+                return [[0.0] * 4 for _ in texts]
+
+        if stub:
+            backend: object = _Stub()
+        else:
+            from src.search.backends import build_backend
+            backend = build_backend("local")
+
+        texts = [f"chunk {i} " * 20 for i in range(chunks)]
+        batch: int = getattr(backend, "max_batch_size", 64)
+
+        start = time.perf_counter()
+        done = 0
+        for i in range(0, len(texts), batch):
+            await backend.embed(texts[i : i + batch])
+            done += min(batch, len(texts) - i)
+        elapsed = time.perf_counter() - start
+
+        # macOS reports ru_maxrss in bytes; Linux in kilobytes.
+        peak_raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        peak_mb = peak_raw / (1024 * 1024) if sys.platform == "darwin" else peak_raw / 1024
+
+        click.echo(
+            f"chunks={done} elapsed={elapsed:.3f}s "
+            f"chunks/sec={(done / elapsed) if elapsed > 0 else 0:.1f} "
+            f"peak_mem_mb={peak_mb:.1f}"
+        )
+
+    asyncio.run(_run())
+
+
 async def _push_file(config: AppConfig, file_path: Path, folder: str) -> None:
     from src.remarkable.cloud import RemarkableCloud
 
