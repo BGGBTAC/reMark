@@ -201,6 +201,8 @@ class SearchConfig(BaseModel):
     api_key_env: str = ""  # for voyage/openai
     chunk_size: int = 512  # max chars per chunk
     chunk_overlap: int = 50
+    # Max chunks sent in one embed() call. Real limit is min(this, backend.max_batch_size).
+    batch_size: int = 64
     top_k: int = 5
     min_score: float = 0.3
     synthesize_answer: bool = True
