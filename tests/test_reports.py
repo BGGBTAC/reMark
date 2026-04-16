@@ -7,7 +7,28 @@ from datetime import UTC, datetime
 
 import pytest
 
+from src.llm.client import LLMClient, LLMResponse
 from src.sync.state import SyncState
+
+
+class _StubLLM(LLMClient):
+    """Minimal stub — records complete() calls and returns canned text."""
+
+    provider = "stub"
+
+    def __init__(self, text: str = ""):
+        self._text = text
+        self.calls: list = []
+
+    async def complete(self, system, messages, model, max_tokens=4096):
+        self.calls.append((system, messages, model, max_tokens))
+        return LLMResponse(
+            text=self._text, input_tokens=1, output_tokens=1,
+            provider=self.provider, model=model,
+        )
+
+    async def complete_vision(self, system, image, prompt, model, max_tokens=2048):
+        raise NotImplementedError
 
 
 @pytest.fixture
@@ -123,7 +144,7 @@ class TestRunnerVaultChannel:
     """The vault channel is purely local — covers the happy path."""
 
     @pytest.mark.asyncio
-    async def test_vault_channel_writes_file(self, state, tmp_path, monkeypatch):
+    async def test_vault_channel_writes_file(self, state, tmp_path):
         from src.config import AppConfig
         from src.reports.runner import run_report
 
@@ -132,10 +153,6 @@ class TestRunnerVaultChannel:
         config = AppConfig()
         config.obsidian.vault_path = str(vault)
 
-        # No API key → runner falls back to context dump without
-        # touching the Anthropic SDK.
-        monkeypatch.delenv(config.processing.api_key_env, raising=False)
-
         rid = state.create_report(
             name="smoke",
             schedule="every 1h",
@@ -143,7 +160,38 @@ class TestRunnerVaultChannel:
             channels=["vault"],
         )
 
-        result = await run_report(state.get_report(rid), state, config)
+        # llm=None → offline fallback path, no API call made
+        result = await run_report(state.get_report(rid), state, config, llm=None)
         assert result.channels_ok == ["vault"]
         assert result.channels_failed == []
         assert any((vault / "Reports").glob("*.md"))
+
+    @pytest.mark.asyncio
+    async def test_runner_uses_llm_client(self, state, tmp_path):
+        from src.config import AppConfig
+        from src.reports.runner import run_report
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        config = AppConfig()
+        config.obsidian.vault_path = str(vault)
+
+        llm = _StubLLM(text="## Weekly summary\n\nAll good.")
+
+        rid = state.create_report(
+            name="weekly",
+            schedule="weekly mon 09:00",
+            prompt="Summarise the week",
+            channels=["vault"],
+        )
+
+        result = await run_report(state.get_report(rid), state, config, llm=llm)
+
+        assert result.channels_ok == ["vault"]
+        assert result.channels_failed == []
+        # The LLM was called and its output ended up in the vault file
+        assert llm.calls
+        md_files = list((vault / "Reports").glob("*.md"))
+        assert md_files
+        content = md_files[0].read_text()
+        assert "Weekly summary" in content

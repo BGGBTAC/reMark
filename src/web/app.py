@@ -408,10 +408,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         report = state.get_report(report_id)
         if report is None:
             raise HTTPException(status_code=404)
+        import os
+
+        from src.llm.factory import build_llm_client
         from src.reports.runner import run_report
 
+        llm = build_llm_client(config.llm, anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"))
         try:
-            result = await run_report(report, state, config)
+            result = await run_report(report, state, config, llm=llm)
             state.update_report(
                 report_id,
                 last_run_at=datetime.now(UTC).isoformat(),

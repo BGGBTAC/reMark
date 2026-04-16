@@ -1295,16 +1295,20 @@ def report_run(ctx: click.Context, report_id: int) -> None:
 
 
 async def _report_run(config: AppConfig, report_id: int) -> None:
+    import os
+
+    from src.llm.factory import build_llm_client
     from src.reports.runner import run_report
     from src.sync.state import SyncState
 
     state = SyncState(resolve_path(config.sync.state_db))
+    llm = build_llm_client(config.llm, anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"))
     try:
         report = state.get_report(report_id)
         if report is None:
             click.echo(f"No report with id={report_id}", err=True)
             sys.exit(1)
-        result = await run_report(report, state, config)
+        result = await run_report(report, state, config, llm=llm)
     finally:
         state.close()
 

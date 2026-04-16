@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from datetime import UTC, datetime, timedelta
 
 from src.config import AppConfig
+from src.llm.factory import build_llm_client
 from src.reports.runner import ReportRunner
 from src.sync.state import SyncState
 
@@ -98,7 +100,11 @@ class ReportScheduler:
     ):
         self._config = config
         self._state = state
-        self._runner = ReportRunner(config, state)
+        _llm = build_llm_client(
+            config.llm,
+            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        )
+        self._runner = ReportRunner(config, state, llm=_llm)
         self._tick = tick_seconds
         self._stopped = asyncio.Event()
 

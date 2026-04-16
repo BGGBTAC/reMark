@@ -1,16 +1,14 @@
-"""Report runner — builds context, calls Claude, dispatches to channels."""
+"""Report runner — builds context, calls the configured LLM, dispatches to channels."""
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import anthropic
-
 from src.config import AppConfig
+from src.llm.client import LLMClient, LLMMessage
 from src.sync.state import SyncState
 
 logger = logging.getLogger(__name__)
@@ -50,16 +48,20 @@ async def run_report(
     state: SyncState,
     config: AppConfig,
     user_id: int | None = None,
+    llm: LLMClient | None = None,
 ) -> ReportResult:
-    """Build context, call Claude, dispatch to every configured channel.
+    """Build context, call the LLM, dispatch to every configured channel.
 
     ``report`` is the row as returned by ``SyncState.list_reports`` /
     ``get_report``. ``user_id`` scopes the context to a specific user's
     vault — leave ``None`` for install-wide reports.
+
+    ``llm`` is the LLMClient to use. When None the function falls back to a
+    plain stats dump (useful in offline / demo mode without an API key).
     """
     name = report["name"]
     channels = json.loads(report["channels"])
-    content = await _generate_summary(report, state, config, user_id)
+    content = await _generate_summary(llm, report, state, config, user_id)
 
     channels_ok: list[str] = []
     channels_failed: list[tuple[str, str]] = []
@@ -89,14 +91,12 @@ async def run_report(
 
 
 async def _generate_summary(
+    llm: LLMClient | None,
     report: dict,
     state: SyncState,
     config: AppConfig,
     user_id: int | None,
 ) -> str:
-    api_key = os.environ.get(config.processing.api_key_env, "")
-    client = anthropic.AsyncAnthropic(api_key=api_key) if api_key else None
-
     ctx_notes = state.recent_synced(limit=50, user_id=user_id)
     stats = state.get_sync_stats()
 
@@ -123,22 +123,22 @@ async def _generate_summary(
         f"Context (last 50 notes + current sync stats):\n\n{context}"
     )
 
-    if client is None:
-        # No API key — fall back to a plain stats dump so the channel
+    if llm is None:
+        # No LLM available — fall back to a plain stats dump so the channel
         # delivery path is still exercised in demo / offline mode.
         return (
             f"# {report['name']}\n\n"
-            f"_No ANTHROPIC_API_KEY configured; raw context dump:_\n\n"
+            f"_No LLM configured; raw context dump:_\n\n"
             f"{context}\n"
         )
 
-    resp = await client.messages.create(
+    response = await llm.complete(
+        system=_SYSTEM_PROMPT,
+        messages=[LLMMessage(role="user", content=user_content)],
         model=config.processing.model,
         max_tokens=2048,
-        system=_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_content}],
     )
-    return resp.content[0].text.strip()
+    return response.text.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -217,9 +217,10 @@ async def _deliver_notion(config: AppConfig, name: str, content: str) -> None:
 class ReportRunner:
     """Thin OO wrapper so the scheduler can hold a single instance."""
 
-    def __init__(self, config: AppConfig, state: SyncState):
+    def __init__(self, config: AppConfig, state: SyncState, llm: LLMClient | None = None):
         self._config = config
         self._state = state
+        self._llm = llm
 
     async def run(self, report: dict, user_id: int | None = None) -> ReportResult:
-        return await run_report(report, self._state, self._config, user_id)
+        return await run_report(report, self._state, self._config, user_id, llm=self._llm)
