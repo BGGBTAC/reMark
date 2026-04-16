@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 
-import anthropic
+from src.llm.client import LLMClient, LLMMessage
 
 logger = logging.getLogger(__name__)
 
@@ -97,11 +97,11 @@ class NoteTagger:
 
     def __init__(
         self,
-        client: anthropic.AsyncAnthropic,
+        llm: LLMClient,
         model: str,
         hierarchical: bool = False,
     ):
-        self._client = client
+        self._llm = llm
         self._model = model
         self._hierarchical = hierarchical
 
@@ -128,7 +128,7 @@ class NoteTagger:
         return merged[:10]  # cap at 10 tags
 
     async def _tag_via_api(self, text: str, notebook_name: str) -> list[str]:
-        """Use Claude to generate contextual tags."""
+        """Use the configured LLM to generate contextual tags."""
         try:
             context = f"Notebook: {notebook_name}\n\n" if notebook_name else ""
             system = (
@@ -136,18 +136,14 @@ class NoteTagger:
                 if self._hierarchical
                 else TAGGING_PROMPT
             )
-            response = await self._client.messages.create(
+            response = await self._llm.complete(
+                system=system,
+                messages=[LLMMessage(role="user", content=f"{context}{text[:2000]}")],
                 model=self._model,
                 max_tokens=256,
-                system=system,
-                messages=[{
-                    "role": "user",
-                    "content": f"{context}{text[:2000]}",  # cap input
-                }],
             )
 
-            raw = response.content[0].text.strip()
-            return _parse_tag_response(raw)
+            return _parse_tag_response(response.text.strip())
 
         except Exception as e:
             logger.warning("API tagging failed: %s", e)

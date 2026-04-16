@@ -307,8 +307,8 @@ class TestParseTagResponse:
 class TestNoteTagger:
     @pytest.mark.asyncio
     async def test_tag_merges_sources(self):
-        client = mock_anthropic_response('["backend", "performance"]')
-        tagger = NoteTagger(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text='["backend", "performance"]')
+        tagger = NoteTagger(llm, "claude-sonnet-4-20250514")
 
         tags = await tagger.tag("Meeting about the API performance issues")
 
@@ -319,16 +319,16 @@ class TestNoteTagger:
 
     @pytest.mark.asyncio
     async def test_tag_empty_text(self):
-        client = mock_anthropic_response("[]")
-        tagger = NoteTagger(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text="[]")
+        tagger = NoteTagger(llm, "claude-sonnet-4-20250514")
 
         tags = await tagger.tag("")
         assert tags == []
 
     @pytest.mark.asyncio
     async def test_tag_deduplicates(self):
-        client = mock_anthropic_response('["meeting", "planning"]')
-        tagger = NoteTagger(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text='["meeting", "planning"]')
+        tagger = NoteTagger(llm, "claude-sonnet-4-20250514")
 
         tags = await tagger.tag("Meeting about sprint planning and timeline")
         # "meeting" and "planning" come from both keyword and API
@@ -342,16 +342,15 @@ class TestNoteTagger:
             TAGGING_PROMPT,
         )
 
-        client = mock_anthropic_response(
-            '["project/remark/search", "technical/python/fastapi"]'
-        )
-        tagger = NoteTagger(
-            client, "claude-sonnet-4-20250514", hierarchical=True,
-        )
+        llm = _StubLLM(text='["project/remark/search", "technical/python/fastapi"]')
+        tagger = NoteTagger(llm, "claude-sonnet-4-20250514", hierarchical=True)
         tags = await tagger.tag("Notes on the FastAPI search layer")
-        call = client.messages.create.call_args
-        assert call.kwargs["system"] == HIERARCHICAL_TAGGING_PROMPT
-        assert call.kwargs["system"] != TAGGING_PROMPT
+
+        # The system prompt forwarded to the LLM must be the hierarchical one
+        assert llm.calls
+        recorded_system = llm.calls[0][0]
+        assert recorded_system == HIERARCHICAL_TAGGING_PROMPT
+        assert recorded_system != TAGGING_PROMPT
         # Hierarchical tags must make it through the merge unchanged
         assert "project/remark/search" in tags
         assert "technical/python/fastapi" in tags
@@ -360,10 +359,22 @@ class TestNoteTagger:
     async def test_flat_mode_keeps_flat_prompt(self):
         from src.processing.tagger import TAGGING_PROMPT
 
-        client = mock_anthropic_response('["flat-tag"]')
-        tagger = NoteTagger(client, "claude-sonnet-4-20250514")
+        llm = _StubLLM(text='["flat-tag"]')
+        tagger = NoteTagger(llm, "claude-sonnet-4-20250514")
         await tagger.tag("some text")
-        assert client.messages.create.call_args.kwargs["system"] == TAGGING_PROMPT
+        assert llm.calls[0][0] == TAGGING_PROMPT
+
+    @pytest.mark.asyncio
+    async def test_tagger_uses_llm_client(self):
+        llm = _StubLLM(text='["foo", "bar"]')
+        tagger = NoteTagger(llm, "llama3.1")
+
+        tags = await tagger.tag("some note text")
+
+        assert "foo" in tags
+        assert "bar" in tags
+        assert llm.calls
+        assert llm.calls[0][2] == "llama3.1"  # model forwarded correctly
 
 
 # =====================
