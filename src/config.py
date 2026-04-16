@@ -40,6 +40,19 @@ class VLMConfig(BaseModel):
     prompt_template: str = "default"
 
 
+class OllamaConfig(BaseModel):
+    base_url: str = "http://localhost:11434"
+    text_model: str = "llama3.1"
+    vision_model: str = "llava"
+    embedding_model: str = "nomic-embed-text"
+    timeout_seconds: float = 120.0
+
+
+class LLMConfig(BaseModel):
+    provider: Literal["anthropic", "ollama"] = "anthropic"
+    ollama: OllamaConfig = Field(default_factory=OllamaConfig)
+
+
 class GoogleVisionConfig(BaseModel):
     credentials_path: str = "~/.remark-bridge/gcloud-credentials.json"
     language_hints: list[str] = Field(default_factory=lambda: ["en", "de"])
@@ -280,6 +293,7 @@ class AppConfig(BaseModel):
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     sync: SyncConfig = Field(default_factory=SyncConfig)
     response: ResponseConfig = Field(default_factory=ResponseConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     microsoft: MicrosoftConfig = Field(default_factory=MicrosoftConfig)
     notion: NotionConfig = Field(default_factory=lambda: NotionConfig())
