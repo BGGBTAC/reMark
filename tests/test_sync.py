@@ -4,8 +4,33 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.llm.client import LLMClient, LLMResponse
 from src.sync.scheduler import _parse_interval
 from src.sync.state import SyncState
+
+
+class _StubLLM(LLMClient):
+    """Minimal LLMClient that returns canned responses for testing."""
+
+    provider = "stub"
+
+    async def complete(self, system, messages, model, max_tokens=4096):
+        return LLMResponse(
+            text="# New Note\n\nTest content",
+            input_tokens=1,
+            output_tokens=1,
+            provider=self.provider,
+            model=model,
+        )
+
+    async def complete_vision(self, system, image, prompt, model, max_tokens=2048):
+        return LLMResponse(
+            text="stub ocr text",
+            input_tokens=1,
+            output_tokens=1,
+            provider=self.provider,
+            model=model,
+        )
 
 # =====================
 # SyncState
@@ -262,17 +287,9 @@ class TestSyncEngine:
 
         cloud = AsyncMock()
 
-        # Mock anthropic calls
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="# New Note\n\nTest content")]
-
         with patch("src.sync.engine.parse_notebook", return_value=[
             PageContent(page_id="p1", text_blocks=[TextBlock(text="Test")])
-        ]), patch("src.sync.engine.anthropic.AsyncAnthropic") as mock_anthropic:
-            mock_client = AsyncMock()
-            mock_client.messages.create = AsyncMock(return_value=mock_response)
-            mock_anthropic.return_value = mock_client
-
+        ]), patch("src.sync.engine.build_llm_client", return_value=_StubLLM()):
             report = await engine.sync_once(cloud, doc_manager, ocr_pipeline)
 
         assert report.success_count == 1

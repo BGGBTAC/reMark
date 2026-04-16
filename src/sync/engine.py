@@ -14,6 +14,8 @@ from pathlib import Path
 import anthropic
 
 from src.config import AppConfig, resolve_path
+from src.llm.client import LLMClient
+from src.llm.factory import build_llm_client
 from src.obsidian.frontmatter import generate_frontmatter
 from src.obsidian.git_sync import GitSync
 from src.obsidian.templates import format_note_content
@@ -80,6 +82,9 @@ class SyncEngine:
         self._state: SyncState | None = None
         self._vault: ObsidianVault | None = None
         self._git: GitSync | None = None
+        self._llm_client: LLMClient | None = None
+        # Kept separately for ResponseGenerator, which still uses the raw
+        # Anthropic SDK surface (messages.create, tool_use, etc.).
         self._anthropic: anthropic.AsyncAnthropic | None = None
         self._indexer = None  # Lazy — only built if search is enabled
         self._plugins = None  # Lazy plugin registry
@@ -134,7 +139,25 @@ class SyncEngine:
             )
         return self._git
 
+    def _get_llm_client(self) -> LLMClient:
+        """Return the shared LLMClient, constructing it on first call.
+
+        All processing consumers (structurer, tagger, summarizer, extractor)
+        receive this rather than a raw vendor SDK client, so switching
+        providers is a config-only operation.
+        """
+        if self._llm_client is None:
+            import os
+            self._llm_client = build_llm_client(
+                self._config.llm,
+                anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+            )
+        return self._llm_client
+
     def _get_anthropic(self) -> anthropic.AsyncAnthropic:
+        """Raw Anthropic client for ResponseGenerator, which still uses the
+        SDK directly (messages.create, streaming, etc.). Processing consumers
+        should use _get_llm_client() instead."""
         if self._anthropic is None:
             import os
             api_key = os.environ.get(self._config.processing.api_key_env, "")
@@ -429,16 +452,16 @@ class SyncEngine:
                     page_count=len(pages), duration_ms=duration,
                 )
 
-            # Processing via Anthropic API
-            client = self._get_anthropic()
+            # Processing via configured LLM provider
+            llm = self._get_llm_client()
             model = self._config.processing.model
 
-            structurer = NoteStructurer(client, model)
+            structurer = NoteStructurer(llm=llm, model=model)
             structured = await structurer.structure(raw_text, notebook.name)
 
             actions = []
             if self._config.processing.extract_actions:
-                extractor = ActionExtractor(client, model)
+                extractor = ActionExtractor(llm=llm, model=model)
                 color_annotations = None
                 action_colors = self._config.processing.actions.action_colors
                 if action_colors:
@@ -450,14 +473,14 @@ class SyncEngine:
             tags = []
             if self._config.processing.extract_tags:
                 tagger = NoteTagger(
-                    client, model,
+                    llm=llm, model=model,
                     hierarchical=self._config.processing.hierarchical_tags,
                 )
                 tags = await tagger.tag(structured.content_md, notebook.name)
 
             summary = None
             if self._config.processing.generate_summary:
-                summarizer = NoteSummarizer(client, model)
+                summarizer = NoteSummarizer(llm=llm, model=model)
                 summary = await summarizer.summarize(structured.content_md, notebook.name)
 
             # Generate frontmatter
