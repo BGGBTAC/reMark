@@ -6,12 +6,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.config import TeamsConfig
+from src.http_pool import SharedHttpPool
 from src.integrations.microsoft.teams import (
     DigestData,
     build_digest,
     correlate_meetings,
     post_digest,
     render_adaptive_card,
+    send_card,
 )
 from src.obsidian.vault import ObsidianVault
 from src.sync.state import SyncState
@@ -196,6 +198,58 @@ class TestPostDigest:
             result = await post_digest(cfg, d)
 
         assert result is False
+
+
+# =====================
+# send_card (shared pool)
+# =====================
+
+class TestSendCard:
+    @pytest.mark.asyncio
+    async def test_teams_webhook_can_use_shared_pool(self):
+        pool = SharedHttpPool()
+        posts: list[tuple[str, dict]] = []
+
+        class _FakeClient:
+            is_closed = False
+            async def post(self, url, json):
+                posts.append((url, json))
+                class _R:
+                    status_code = 200
+                    def raise_for_status(self): pass
+                return _R()
+
+        async def _fake_client():
+            return _FakeClient()
+
+        pool.client = _fake_client  # type: ignore[assignment]
+
+        result = await send_card(
+            webhook_url="https://example.com/hook",
+            card={"title": "x"},
+            http_pool=pool,
+        )
+        assert result is True
+        assert posts == [("https://example.com/hook", {"title": "x"})]
+
+    @pytest.mark.asyncio
+    async def test_send_card_fallback_no_pool(self):
+        """Without a pool, send_card still works via its own client."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("src.integrations.microsoft.teams.httpx.AsyncClient", return_value=mock_client):
+            result = await send_card(
+                webhook_url="https://example.com/hook",
+                card={"type": "message"},
+            )
+        assert result is True
 
 
 # =====================

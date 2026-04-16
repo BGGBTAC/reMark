@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 
 from src.config import TeamsConfig
+from src.http_pool import SharedHttpPool
 from src.integrations.microsoft.graph import GraphClient
 from src.obsidian.vault import ObsidianVault
 from src.sync.state import SyncState
@@ -153,15 +154,58 @@ def render_adaptive_card(digest: DigestData, title_prefix: str = "reMark") -> di
     return card
 
 
-async def post_digest(config: TeamsConfig, digest: DigestData) -> bool:
+async def send_card(
+    webhook_url: str,
+    card: dict,
+    *,
+    http_pool: SharedHttpPool | None = None,
+) -> bool:
+    """POST an Adaptive Card payload to a Teams webhook URL.
+
+    When the caller provides ``http_pool`` the request reuses an existing
+    keep-alive connection instead of paying the TLS handshake on every
+    dispatch. The fallback (no pool) keeps backward compatibility for
+    callers that aren't pool-aware yet.
+    """
+    try:
+        if http_pool is not None:
+            client = await http_pool.client()
+            resp = await client.post(webhook_url, json=card)
+        else:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(
+                    webhook_url,
+                    content=json.dumps(card),
+                    headers={"Content-Type": "application/json"},
+                )
+        resp.raise_for_status()
+        return resp.status_code < 300
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            "Teams webhook returned %d: %s",
+            e.response.status_code, e.response.text[:200],
+        )
+        return False
+    except httpx.TransportError as e:
+        logger.warning("Teams webhook failed: %s", e)
+        return False
+
+
+async def post_digest(
+    config: TeamsConfig,
+    digest: DigestData,
+    *,
+    http_pool: SharedHttpPool | None = None,
+) -> bool:
     """Post a digest card to the configured Teams webhook."""
     if not config.enabled or not config.webhook_url:
         return False
 
     card = render_adaptive_card(digest)
 
-    async with httpx.AsyncClient(timeout=20) as client:
-        try:
+    try:
+        if http_pool is not None:
+            client = await http_pool.client()
             resp = await client.post(
                 config.webhook_url,
                 content=json.dumps(card),
@@ -174,9 +218,26 @@ async def post_digest(config: TeamsConfig, digest: DigestData) -> bool:
                 )
                 return False
             return True
-        except httpx.TransportError as e:
-            logger.warning("Teams webhook failed: %s", e)
-            return False
+        async with httpx.AsyncClient(timeout=20) as client:
+            try:
+                resp = await client.post(
+                    config.webhook_url,
+                    content=json.dumps(card),
+                    headers={"Content-Type": "application/json"},
+                )
+                if resp.status_code >= 400:
+                    logger.warning(
+                        "Teams webhook returned %d: %s",
+                        resp.status_code, resp.text[:200],
+                    )
+                    return False
+                return True
+            except httpx.TransportError as e:
+                logger.warning("Teams webhook failed: %s", e)
+                return False
+    except httpx.TransportError as e:
+        logger.warning("Teams webhook failed: %s", e)
+        return False
 
 
 @dataclass
