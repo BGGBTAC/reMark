@@ -14,6 +14,7 @@ from pathlib import Path
 import anthropic
 
 from src.config import AppConfig, resolve_path
+from src.http_pool import SharedHttpPool
 from src.llm.client import LLMClient
 from src.llm.factory import build_llm_client
 from src.obsidian.frontmatter import generate_frontmatter
@@ -88,12 +89,25 @@ class SyncEngine:
         self._anthropic: anthropic.AsyncAnthropic | None = None
         self._indexer = None  # Lazy — only built if search is enabled
         self._plugins = None  # Lazy plugin registry
+        # Shared keep-alive client reused across auth refreshes, Teams
+        # webhooks, and any other one-off integration POSTs this engine
+        # triggers. Long-lived protocol clients (RemarkableCloud, Notion)
+        # manage their own pools and are NOT routed through this one.
+        self._http_pool = SharedHttpPool()
         # Multi-device + multi-user context: the active (user, device)
         # for the current cycle. Set via set_device(); used when
         # writing sync_state rows.
         self._current_device_id: str = "default"
         self._current_vault_subfolder: str = ""
         self._current_user_id: int = 1  # pre-0.7 single-user default
+
+    async def close(self) -> None:
+        """Release pooled resources.
+
+        Called by the CLI / web runner after all sync cycles are done.
+        Safe to call multiple times.
+        """
+        await self._http_pool.close()
 
     def set_device(
         self,
