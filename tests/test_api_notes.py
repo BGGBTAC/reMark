@@ -94,3 +94,85 @@ class TestNoteStatus:
         )
         # Either 400 (path traversal blocked) or 404 (no row matched)
         assert resp.status_code in (400, 404)
+
+
+# ---------------------------------------------------------------------------
+# D2: GET /api/notes/{vault_path}/preview
+# ---------------------------------------------------------------------------
+
+class TestNotePreview:
+    def test_preview_404_when_no_rm_cached(self, tmp_path):
+        """No .rm file on disk → 404. Cache is populated on first sync."""
+        client, state, token = _make_env(tmp_path)
+        _seed_sync_state(state, "Inbox/Note.md")
+
+        resp = client.get(
+            "/api/notes/Inbox/Note.md/preview",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    def test_preview_returns_png_when_rm_present(self, tmp_path, monkeypatch):
+        """When load_last_rm_bytes returns bytes, render and return PNG."""
+        import src.web.api_notes as api_notes_mod
+
+        client, state, token = _make_env(tmp_path)
+        _seed_sync_state(state, "Inbox/Note.md")
+
+        fake_rm = b"fake-rm-content"
+        fake_png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 50
+
+        monkeypatch.setattr(state, "load_last_rm_bytes", lambda _p: fake_rm)
+        monkeypatch.setattr(api_notes_mod, "_render_first_page", lambda _b: fake_png)
+        api_notes_mod._PREVIEW_CACHE.clear()
+
+        resp = client.get(
+            "/api/notes/Inbox/Note.md/preview",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.content.startswith(b"\x89PNG")
+
+    def test_preview_caches_by_content_hash(self, tmp_path, monkeypatch):
+        """The same .rm bytes should only be rendered once per cache window."""
+        import src.web.api_notes as api_notes_mod
+
+        client, state, token = _make_env(tmp_path)
+        _seed_sync_state(state, "Inbox/Note.md")
+
+        fake_rm = b"stable-rm-bytes"
+        fake_png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 50
+
+        render_calls = {"n": 0}
+
+        def _fake_render(rm_bytes: bytes) -> bytes:
+            render_calls["n"] += 1
+            return fake_png
+
+        monkeypatch.setattr(state, "load_last_rm_bytes", lambda _p: fake_rm)
+        monkeypatch.setattr(api_notes_mod, "_render_first_page", _fake_render)
+        api_notes_mod._PREVIEW_CACHE.clear()
+
+        for _ in range(3):
+            resp = client.get(
+                "/api/notes/Inbox/Note.md/preview",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 200
+
+        assert render_calls["n"] == 1  # rendered once, then cache hit
+
+    def test_preview_rejects_missing_bearer(self, tmp_path):
+        client, _, _token = _make_env(tmp_path)
+        resp = client.get("/api/notes/Inbox/Note.md/preview")
+        assert resp.status_code in (401, 403)
+
+    def test_preview_404_for_untracked_note(self, tmp_path):
+        """Notes that were never synced have no state row and no .rm cache."""
+        client, _state, token = _make_env(tmp_path)
+        resp = client.get(
+            "/api/notes/Ghost.md/preview",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
