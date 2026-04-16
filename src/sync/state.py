@@ -245,7 +245,15 @@ class SyncState:
     @property
     def conn(self) -> sqlite3.Connection:
         if self._conn is None:
-            self._conn = sqlite3.connect(str(self._db_path))
+            # check_same_thread=False is required because the web
+            # layer creates the shared SyncState singleton in the main
+            # thread at create_app() time, but TestClient + uvicorn
+            # workers access it from request-handler threads. WAL mode
+            # already serializes writes; the GIL + FastAPI's per-request
+            # sequential semantics prevent overlapping mutations.
+            self._conn = sqlite3.connect(
+                str(self._db_path), check_same_thread=False,
+            )
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA journal_mode=WAL")
         return self._conn
