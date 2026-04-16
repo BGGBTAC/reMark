@@ -1,4 +1,5 @@
 """OllamaClient — talks to /api/chat and /api/generate."""
+
 from __future__ import annotations
 
 import base64
@@ -60,7 +61,10 @@ async def test_ollama_vision_encodes_image_base64():
     client = OllamaClient(base_url="http://host:11434", http=http)
     image_bytes = b"\x89PNG\r\n\x1a\n"
     resp = await client.complete_vision(
-        system="sys", image=image_bytes, prompt="describe", model="llava",
+        system="sys",
+        image=image_bytes,
+        prompt="describe",
+        model="llava",
     )
     assert resp.text == "a cat"
     url, body = http.calls[0]

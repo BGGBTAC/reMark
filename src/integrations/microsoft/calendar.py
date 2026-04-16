@@ -89,7 +89,9 @@ class CalendarClient:
             event_id = result["id"]
             logger.info(
                 "Created calendar event '%s' on %s (%s)",
-                action.task[:50], dt.date().isoformat(), event_id[:8],
+                action.task[:50],
+                dt.date().isoformat(),
+                event_id[:8],
             )
             return event_id
         except GraphError as e:
@@ -129,8 +131,7 @@ class CalendarClient:
 
         if attendees:
             event_body["attendees"] = [
-                {"emailAddress": {"address": addr}, "type": "required"}
-                for addr in attendees
+                {"emailAddress": {"address": addr}, "type": "required"} for addr in attendees
             ]
 
         try:

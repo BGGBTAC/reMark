@@ -1,4 +1,5 @@
 """AnthropicClient — wraps anthropic.AsyncAnthropic behind LLMClient."""
+
 from __future__ import annotations
 
 import base64
@@ -15,6 +16,7 @@ class AnthropicClient(LLMClient):
             self._sdk = sdk
         else:
             import anthropic
+
             self._sdk = anthropic.AsyncAnthropic(api_key=api_key)
 
     async def complete(

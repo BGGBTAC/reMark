@@ -1,4 +1,5 @@
 """AnthropicClient adapter — verifies it routes to anthropic.AsyncAnthropic."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -42,7 +43,10 @@ async def test_anthropic_complete_text(fake_sdk):
 async def test_anthropic_vision_includes_image(fake_sdk):
     client = AnthropicClient(sdk=fake_sdk)
     await client.complete_vision(
-        system="sys", image=b"\x89PNG\r\n", prompt="describe", model="claude-vision",
+        system="sys",
+        image=b"\x89PNG\r\n",
+        prompt="describe",
+        model="claude-vision",
     )
     call = fake_sdk.messages.create.await_args
     msg_content = call.kwargs["messages"][0]["content"]

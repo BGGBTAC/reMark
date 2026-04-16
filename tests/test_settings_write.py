@@ -49,7 +49,8 @@ class TestConfigWriterRoundtrip:
         p = tmp_path / "c.yaml"
         write_yaml(p, {"microsoft": {"client_id": "real-secret"}})
         update_section(
-            p, "microsoft",
+            p,
+            "microsoft",
             {"client_id": MASK},
             secret_keys={"client_id"},
         )

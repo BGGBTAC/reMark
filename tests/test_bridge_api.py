@@ -137,9 +137,7 @@ class TestTokenLifecycle:
             assert t1 != t2
             assert len(t1) >= 32
             # DB only carries hashes, never plain values
-            rows = state.conn.execute(
-                "SELECT token_hash FROM bridge_tokens"
-            ).fetchall()
+            rows = state.conn.execute("SELECT token_hash FROM bridge_tokens").fetchall()
             hashes = [r["token_hash"] for r in rows]
             assert t1 not in hashes
             assert t2 not in hashes

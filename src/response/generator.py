@@ -117,9 +117,7 @@ class ResponseGenerator:
 
         # Include Q&A in analysis section if any
         if qa_pairs:
-            qa_text = "\n\n".join(
-                f"Q: {qa['question']}\n→ {qa['answer']}" for qa in qa_pairs
-            )
+            qa_text = "\n\n".join(f"Q: {qa['question']}\n→ {qa['answer']}" for qa in qa_pairs)
             analysis = (qa_text + "\n\n" + analysis).strip() if analysis else qa_text
 
         response_content = ResponseContent(
@@ -163,9 +161,8 @@ class ResponseGenerator:
 
         try:
             import json
-            prompt = "Questions from the notes:\n\n" + "\n".join(
-                f"- {q}" for q in questions
-            )
+
+            prompt = "Questions from the notes:\n\n" + "\n".join(f"- {q}" for q in questions)
             response = await self._client.messages.create(
                 model=self._model,
                 max_tokens=2048,
@@ -227,11 +224,7 @@ def _extract_questions(content: str) -> list[str]:
         if re.match(r"^(Q|Question)\s*:", stripped, re.IGNORECASE):
             continue
 
-        if (
-            stripped.endswith("?")
-            and len(stripped) > 10
-            and stripped.lower() not in seen
-        ):
+        if stripped.endswith("?") and len(stripped) > 10 and stripped.lower() not in seen:
             questions.append(stripped)
             seen.add(stripped.lower())
 
@@ -265,21 +258,25 @@ def _extract_action_items(content: str) -> list[dict]:
             if deadline_match:
                 deadline = (deadline_match.group(1) or deadline_match.group(2)).strip()
 
-            actions.append({
-                "task": task_line,
-                "priority": priority,
-                "assignee": assignee,
-                "deadline": deadline,
-                "type": "task",
-            })
+            actions.append(
+                {
+                    "task": task_line,
+                    "priority": priority,
+                    "assignee": assignee,
+                    "deadline": deadline,
+                    "type": "task",
+                }
+            )
 
         elif re.match(r"-\s*\[\?\]\s*(.+)", stripped):
             q = re.match(r"-\s*\[\?\]\s*(.+)", stripped).group(1)
-            actions.append({
-                "task": q,
-                "priority": "medium",
-                "type": "question",
-            })
+            actions.append(
+                {
+                    "task": q,
+                    "priority": "medium",
+                    "type": "question",
+                }
+            )
 
     return actions
 

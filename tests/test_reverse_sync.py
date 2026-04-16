@@ -26,6 +26,7 @@ def state(tmp_path):
 # collect_candidates
 # =====================
 
+
 class TestCollectCandidates:
     def test_disabled_returns_nothing(self, vault, state):
         config = ReverseSyncConfig(enabled=False)
@@ -55,8 +56,11 @@ class TestCollectCandidates:
         note_path = vault.path / "Inbox" / "done.md"
         vault.write_note(
             note_path,
-            {"title": "Done", "push_to_tablet": True,
-             "pushed_to_tablet_at": "2026-01-01T00:00:00Z"},
+            {
+                "title": "Done",
+                "push_to_tablet": True,
+                "pushed_to_tablet_at": "2026-01-01T00:00:00Z",
+            },
             "Already pushed",
         )
 
@@ -81,8 +85,10 @@ class TestCollectCandidates:
 
     def test_folder_nonexistent(self, vault, state):
         config = ReverseSyncConfig(
-            enabled=True, trigger_on_frontmatter=False,
-            trigger_on_folder=True, folder="Missing",
+            enabled=True,
+            trigger_on_frontmatter=False,
+            trigger_on_folder=True,
+            folder="Missing",
             trigger_on_demand=False,
         )
         syncer = ReverseSyncer(config, vault, state)
@@ -139,6 +145,7 @@ class TestCollectCandidates:
 # push flow
 # =====================
 
+
 class TestPushFlow:
     @pytest.mark.asyncio
     async def test_run_pushes_pdf(self, vault, state, tmp_path):
@@ -154,12 +161,20 @@ class TestPushFlow:
 
         cloud = AsyncMock()
         from src.remarkable.cloud import DocumentMetadata
-        cloud.list_items = AsyncMock(return_value=[
-            DocumentMetadata(
-                id="folder-1", name="From-Vault", parent="",
-                doc_type="CollectionType", version=1, hash="", modified="",
-            ),
-        ])
+
+        cloud.list_items = AsyncMock(
+            return_value=[
+                DocumentMetadata(
+                    id="folder-1",
+                    name="From-Vault",
+                    parent="",
+                    doc_type="CollectionType",
+                    version=1,
+                    hash="",
+                    modified="",
+                ),
+            ]
+        )
         cloud.upload_document = AsyncMock(return_value="new-rm-doc")
 
         result = await syncer.run(cloud)

@@ -242,7 +242,9 @@ class RemarkableCloud:
 
         logger.info(
             "Uploaded %s as %s (parent: %s)",
-            source_path.name, doc_id[:8], parent_folder or "root",
+            source_path.name,
+            doc_id[:8],
+            parent_folder or "root",
         )
         return doc_id
 
@@ -289,41 +291,50 @@ class RemarkableCloud:
         for attempt in range(MAX_RETRIES):
             try:
                 resp = await self.client.request(
-                    method, url, headers=headers, json=json, content=content,
+                    method,
+                    url,
+                    headers=headers,
+                    json=json,
+                    content=content,
                 )
 
                 if resp.status_code < 400:
                     return resp
 
                 if resp.status_code == 429 or resp.status_code >= 500:
-                    wait = RETRY_BACKOFF_BASE ** attempt
+                    wait = RETRY_BACKOFF_BASE**attempt
                     logger.warning(
                         "Request %s %s returned %d, retrying in %ds (attempt %d/%d)",
-                        method, _redact_url(url), resp.status_code, wait, attempt + 1, MAX_RETRIES,
+                        method,
+                        _redact_url(url),
+                        resp.status_code,
+                        wait,
+                        attempt + 1,
+                        MAX_RETRIES,
                     )
                     await asyncio.sleep(wait)
                     continue
 
                 # 4xx (not 429) — don't retry
-                raise CloudError(
-                    f"{method} {_redact_url(url)} failed: HTTP {resp.status_code}"
-                )
+                raise CloudError(f"{method} {_redact_url(url)} failed: HTTP {resp.status_code}")
 
             except httpx.TransportError as e:
                 last_error = e
-                wait = RETRY_BACKOFF_BASE ** attempt
+                wait = RETRY_BACKOFF_BASE**attempt
                 logger.warning(
                     "Transport error on %s %s: %s, retrying in %ds",
-                    method, _redact_url(url), e, wait,
+                    method,
+                    _redact_url(url),
+                    e,
+                    wait,
                 )
                 import asyncio
+
                 await asyncio.sleep(wait)
 
         raise CloudError(f"Request failed after {MAX_RETRIES} retries: {last_error}")
 
-    async def _fetch_blob(
-        self, storage: str, blob_hash: str, headers: dict[str, str]
-    ) -> bytes:
+    async def _fetch_blob(self, storage: str, blob_hash: str, headers: dict[str, str]) -> bytes:
         """Fetch a single blob by its hash."""
         url = f"{storage}/sync/v2/signed-urls/downloads"
         payload = {"relative_path": blob_hash, "http_method": "GET"}
@@ -391,6 +402,7 @@ class RemarkableCloud:
 
         # First line is the schema version / generation
         import contextlib
+
         with contextlib.suppress(ValueError):
             root.schema_version = int(lines[0])
 
@@ -399,14 +411,16 @@ class RemarkableCloud:
                 continue
             parts = line.split(":")
             if len(parts) >= 3:
-                root.files.append({
-                    "hash": parts[0],
-                    "type": parts[1],
-                    "id": parts[2],
-                    "subfiles": int(parts[3]) if len(parts) > 3 else 0,
-                    "size": int(parts[4]) if len(parts) > 4 else 0,
-                    "modified": parts[5] if len(parts) > 5 else "",
-                })
+                root.files.append(
+                    {
+                        "hash": parts[0],
+                        "type": parts[1],
+                        "id": parts[2],
+                        "subfiles": int(parts[3]) if len(parts) > 3 else 0,
+                        "size": int(parts[4]) if len(parts) > 4 else 0,
+                        "modified": parts[5] if len(parts) > 5 else "",
+                    }
+                )
 
         return root
 

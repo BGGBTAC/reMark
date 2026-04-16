@@ -52,9 +52,7 @@ class TodoClient:
                 return self._list_id
 
         if not self._auto_create:
-            raise GraphError(
-                f"Task list '{self._list_name}' not found and auto_create is disabled"
-            )
+            raise GraphError(f"Task list '{self._list_name}' not found and auto_create is disabled")
 
         created = await self._graph.post(
             "/me/todo/lists",

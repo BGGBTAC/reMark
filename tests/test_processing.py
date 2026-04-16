@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.llm.client import LLMClient, LLMMessage, LLMResponse
+from src.llm.client import LLMClient, LLMResponse
 from src.processing.actions import (
     ActionExtractor,
     ActionItem,
@@ -30,8 +30,11 @@ class _StubLLM(LLMClient):
     async def complete(self, system, messages, model, max_tokens=4096):
         self.calls.append((system, messages, model, max_tokens))
         return LLMResponse(
-            text=self._text, input_tokens=1, output_tokens=1,
-            provider=self.provider, model=model,
+            text=self._text,
+            input_tokens=1,
+            output_tokens=1,
+            provider=self.provider,
+            model=model,
         )
 
     async def complete_vision(self, system, image, prompt, model, max_tokens=2048):
@@ -39,6 +42,7 @@ class _StubLLM(LLMClient):
 
 
 # -- Helper to mock Anthropic client (used by actions, tagger, summarizer tests) --
+
 
 def mock_anthropic_response(text: str) -> AsyncMock:
     """Create a mock Anthropic client that returns the given text."""
@@ -52,6 +56,7 @@ def mock_anthropic_response(text: str) -> AsyncMock:
 # =====================
 # NoteStructurer
 # =====================
+
 
 class TestNoteStructurer:
     @pytest.mark.asyncio
@@ -127,6 +132,7 @@ class TestExtractTitle:
 # ActionExtractor
 # =====================
 
+
 class TestExtractByPattern:
     def test_todo_pattern(self):
         actions = _extract_by_pattern("TODO: send the report")
@@ -181,10 +187,12 @@ class TestExtractByPattern:
 
 class TestParseActionResponse:
     def test_valid_json(self):
-        raw = json.dumps([
-            {"task": "Send report", "type": "task", "priority": "high"},
-            {"task": "Check budget", "type": "followup", "assignee": "Alice"},
-        ])
+        raw = json.dumps(
+            [
+                {"task": "Send report", "type": "task", "priority": "high"},
+                {"task": "Check budget", "type": "followup", "assignee": "Alice"},
+            ]
+        )
         actions = _parse_action_response(raw)
         assert len(actions) == 2
         assert actions[0].task == "Send report"
@@ -238,9 +246,11 @@ class TestMergeActions:
 class TestActionExtractor:
     @pytest.mark.asyncio
     async def test_extract_combines_sources(self):
-        api_response = json.dumps([
-            {"task": "Review architecture", "type": "task", "priority": "high"},
-        ])
+        api_response = json.dumps(
+            [
+                {"task": "Review architecture", "type": "task", "priority": "high"},
+            ]
+        )
         llm = _StubLLM(text=api_response)
         extractor = ActionExtractor(llm, "claude-sonnet-4-20250514")
 
@@ -261,9 +271,11 @@ class TestActionExtractor:
 
     @pytest.mark.asyncio
     async def test_action_extractor_uses_llm_client(self):
-        api_response = json.dumps([
-            {"task": "Deploy to prod", "type": "task", "priority": "high"},
-        ])
+        api_response = json.dumps(
+            [
+                {"task": "Deploy to prod", "type": "task", "priority": "high"},
+            ]
+        )
         llm = _StubLLM(text=api_response)
         extractor = ActionExtractor(llm, "llama3.1")
 
@@ -278,6 +290,7 @@ class TestActionExtractor:
 # =====================
 # NoteTagger
 # =====================
+
 
 class TestExtractKeywordTags:
     def test_meeting_detected(self):
@@ -297,9 +310,7 @@ class TestExtractKeywordTags:
         assert len(tags) == 0
 
     def test_multiple_tags(self):
-        tags = _extract_keyword_tags(
-            "Meeting about the API deployment timeline for next sprint"
-        )
+        tags = _extract_keyword_tags("Meeting about the API deployment timeline for next sprint")
         assert "meeting" in tags
         assert "technical" in tags
         assert "planning" in tags
@@ -396,14 +407,17 @@ class TestNoteTagger:
 # NoteSummarizer
 # =====================
 
+
 class TestNoteSummarizer:
     @pytest.mark.asyncio
     async def test_summarize_returns_result(self):
-        response = json.dumps({
-            "one_line": "Team discussed Q2 OKRs",
-            "key_points": ["Revenue target set", "Hiring plan approved"],
-            "topics": ["okrs", "hiring"],
-        })
+        response = json.dumps(
+            {
+                "one_line": "Team discussed Q2 OKRs",
+                "key_points": ["Revenue target set", "Hiring plan approved"],
+                "topics": ["okrs", "hiring"],
+            }
+        )
         llm = _StubLLM(text=response)
         summarizer = NoteSummarizer(llm, "claude-sonnet-4-20250514")
 

@@ -1,4 +1,5 @@
 """bench command runs a synthetic embed and reports timings."""
+
 from __future__ import annotations
 
 from click.testing import CliRunner

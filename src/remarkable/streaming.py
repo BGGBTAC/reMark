@@ -4,11 +4,12 @@ Blobs below the threshold stay in memory (no tmp-file overhead for the
 common single-page case). Anything larger is streamed chunk-by-chunk
 into a temp file so RSS stays bounded regardless of notebook size.
 """
+
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 
 async def download_blob(
@@ -47,9 +48,10 @@ async def download_blob(
                     # We crossed the threshold mid-stream; open a temp file
                     # and flush the already-buffered chunks before continuing.
                     fd, tmp_name = tempfile.mkstemp(
-                        prefix="rm-blob-", dir=str(temp_dir_path),
+                        prefix="rm-blob-",
+                        dir=str(temp_dir_path),
                     )
-                    tmp_file = open(fd, "wb")
+                    tmp_file = open(fd, "wb")  # noqa: SIM115
                     for queued in buffer:
                         tmp_file.write(queued)
                     buffer = []

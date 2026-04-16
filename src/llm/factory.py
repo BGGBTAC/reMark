@@ -3,6 +3,7 @@
 Anthropic needs an API key at construction; Ollama needs the base URL
 and timeout. Both present the same consumer-facing surface.
 """
+
 from __future__ import annotations
 
 from src.config import LLMConfig

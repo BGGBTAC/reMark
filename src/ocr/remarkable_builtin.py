@@ -53,9 +53,7 @@ class RemarkableBuiltinOCR(OCREngine):
         # Alternative format: array of paragraphs
         if not text and "paragraphs" in data:
             paragraphs = data["paragraphs"]
-            text = "\n".join(
-                p.get("text", "") for p in paragraphs if isinstance(p, dict)
-            )
+            text = "\n".join(p.get("text", "") for p in paragraphs if isinstance(p, dict))
 
         if not text.strip():
             return None
@@ -83,13 +81,15 @@ def _parse_word_boxes(data: dict) -> list[BoundingBox] | None:
             continue
         bbox = word.get("boundingBox", {})
         if bbox:
-            boxes.append(BoundingBox(
-                x=bbox.get("x", 0),
-                y=bbox.get("y", 0),
-                width=bbox.get("width", 0),
-                height=bbox.get("height", 0),
-                text=word.get("label", ""),
-                confidence=word.get("confidence", 1.0),
-            ))
+            boxes.append(
+                BoundingBox(
+                    x=bbox.get("x", 0),
+                    y=bbox.get("y", 0),
+                    width=bbox.get("width", 0),
+                    height=bbox.get("height", 0),
+                    text=word.get("label", ""),
+                    confidence=word.get("confidence", 1.0),
+                )
+            )
 
     return boxes if boxes else None

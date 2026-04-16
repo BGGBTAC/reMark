@@ -1,4 +1,5 @@
 """OllamaEmbeddingBackend — /api/embeddings against a local Ollama server."""
+
 from __future__ import annotations
 
 
@@ -28,10 +29,12 @@ class _FakeHTTP:
 async def test_ollama_backend_embeds_each_text():
     from src.search.backends import OllamaEmbeddingBackend
 
-    http = _FakeHTTP([
-        {"embedding": [0.1, 0.2, 0.3]},
-        {"embedding": [0.4, 0.5, 0.6]},
-    ])
+    http = _FakeHTTP(
+        [
+            {"embedding": [0.1, 0.2, 0.3]},
+            {"embedding": [0.4, 0.5, 0.6]},
+        ]
+    )
     backend = OllamaEmbeddingBackend(
         base_url="http://host:11434",
         model="nomic-embed-text",
@@ -59,6 +62,7 @@ async def test_ollama_backend_empty_list_is_noop():
 
 def test_ollama_backend_name_is_ollama():
     from src.search.backends import OllamaEmbeddingBackend
+
     backend = OllamaEmbeddingBackend(model="nomic-embed-text")
     assert backend.name == "ollama"
 
@@ -73,11 +77,13 @@ def test_ollama_backend_known_dimensions():
 
 def test_ollama_backend_unknown_model_falls_back_to_768():
     from src.search.backends import OllamaEmbeddingBackend
+
     # Unknown models: assume 768 (most common for Ollama embedding models today)
     assert OllamaEmbeddingBackend(model="custom-model-xyz").dimension == 768
 
 
 def test_ollama_backend_strips_trailing_slash():
     from src.search.backends import OllamaEmbeddingBackend
+
     b = OllamaEmbeddingBackend(base_url="http://host:11434/", model="nomic-embed-text")
     assert b._base_url == "http://host:11434"

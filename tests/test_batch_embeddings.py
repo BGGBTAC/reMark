@@ -1,4 +1,5 @@
 """Reindex batches chunks across multiple notes into one embed() call."""
+
 from __future__ import annotations
 
 import pytest

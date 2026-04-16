@@ -23,8 +23,11 @@ class _StubLLM(LLMClient):
     async def complete(self, system, messages, model, max_tokens=4096):
         self.calls.append((system, messages, model, max_tokens))
         return LLMResponse(
-            text=self._text, input_tokens=1, output_tokens=1,
-            provider=self.provider, model=model,
+            text=self._text,
+            input_tokens=1,
+            output_tokens=1,
+            provider=self.provider,
+            model=model,
         )
 
     async def complete_vision(self, system, image, prompt, model, max_tokens=2048):
@@ -79,7 +82,9 @@ class TestReportsCRUD:
 
         r_disabled = state.create_report("d", "every 1h", "p", ["vault"])
         state.update_report(
-            r_disabled, enabled=False, next_run_at=past,
+            r_disabled,
+            enabled=False,
+            next_run_at=past,
         )
 
         r_future = state.create_report("f", "every 1h", "p", ["vault"])
@@ -112,7 +117,12 @@ class TestScheduleParser:
 
         ref = datetime(2026, 4, 15, 8, 0, tzinfo=UTC)
         assert next_run("daily 09:00", ref) == datetime(
-            2026, 4, 15, 9, 0, tzinfo=UTC,
+            2026,
+            4,
+            15,
+            9,
+            0,
+            tzinfo=UTC,
         )
 
     def test_daily_after_today_rolls_over(self):
@@ -120,7 +130,12 @@ class TestScheduleParser:
 
         ref = datetime(2026, 4, 15, 10, 0, tzinfo=UTC)
         assert next_run("daily 09:00", ref) == datetime(
-            2026, 4, 16, 9, 0, tzinfo=UTC,
+            2026,
+            4,
+            16,
+            9,
+            0,
+            tzinfo=UTC,
         )
 
     def test_weekly(self):

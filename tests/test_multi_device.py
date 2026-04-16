@@ -79,7 +79,8 @@ class TestSyncStateDeviceColumn:
             device_id="pro",
         )
         row = state.conn.execute(
-            "SELECT device_id FROM sync_state WHERE doc_id = ?", ("doc-1",),
+            "SELECT device_id FROM sync_state WHERE doc_id = ?",
+            ("doc-1",),
         ).fetchone()
         assert row["device_id"] == "pro"
 
@@ -95,7 +96,8 @@ class TestSyncStateDeviceColumn:
             action_count=0,
         )
         row = state.conn.execute(
-            "SELECT device_id FROM sync_state WHERE doc_id = ?", ("doc-2",),
+            "SELECT device_id FROM sync_state WHERE doc_id = ?",
+            ("doc-2",),
         ).fetchone()
         assert row["device_id"] == "default"
 
@@ -133,9 +135,7 @@ class TestLegacyMigration:
         try:
             cols = {
                 row["name"]
-                for row in state.conn.execute(
-                    "PRAGMA table_info(sync_state)"
-                ).fetchall()
+                for row in state.conn.execute("PRAGMA table_info(sync_state)").fetchall()
             }
             assert "device_id" in cols
             row = state.conn.execute(

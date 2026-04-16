@@ -4,6 +4,7 @@
 image input is passed via the `images: [base64]` field — vision support
 in /api/chat is inconsistent across Ollama versions).
 """
+
 from __future__ import annotations
 
 import base64

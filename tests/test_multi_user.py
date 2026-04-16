@@ -37,7 +37,7 @@ class TestUsersTable:
         a = state.ensure_default_admin("h1")
         assert a is not None
         b = state.ensure_default_admin("h2")
-        assert b is None      # table no longer empty
+        assert b is None  # table no longer empty
         users = state.list_users()
         assert len(users) == 1
         assert users[0]["username"] == "admin"
@@ -93,23 +93,36 @@ class TestBcryptHelpers:
 class TestUserScopedQueries:
     def test_mark_synced_tags_user_id(self, state):
         state.mark_synced(
-            doc_id="d1", doc_name="A", parent_folder="F",
-            cloud_hash="h", vault_path="/v/a.md",
-            ocr_engine="test", page_count=1, action_count=0,
-            device_id="default", user_id=42,
+            doc_id="d1",
+            doc_name="A",
+            parent_folder="F",
+            cloud_hash="h",
+            vault_path="/v/a.md",
+            ocr_engine="test",
+            page_count=1,
+            action_count=0,
+            device_id="default",
+            user_id=42,
         )
         row = state.conn.execute(
-            "SELECT user_id FROM sync_state WHERE doc_id = ?", ("d1",),
+            "SELECT user_id FROM sync_state WHERE doc_id = ?",
+            ("d1",),
         ).fetchone()
         assert row["user_id"] == 42
 
     def test_recent_synced_filter(self, state):
         for i, uid in enumerate([7, 7, 99], 1):
             state.mark_synced(
-                doc_id=f"d{i}", doc_name=f"n{i}", parent_folder="F",
-                cloud_hash=f"h{i}", vault_path=f"/v/{i}.md",
-                ocr_engine="t", page_count=1, action_count=0,
-                device_id="default", user_id=uid,
+                doc_id=f"d{i}",
+                doc_name=f"n{i}",
+                parent_folder="F",
+                cloud_hash=f"h{i}",
+                vault_path=f"/v/{i}.md",
+                ocr_engine="t",
+                page_count=1,
+                action_count=0,
+                device_id="default",
+                user_id=uid,
             )
         by_7 = state.recent_synced(user_id=7)
         by_99 = state.recent_synced(user_id=99)
@@ -120,15 +133,25 @@ class TestUserScopedQueries:
 
     def test_list_synced_filter(self, state):
         state.mark_synced(
-            doc_id="u1", doc_name="x", parent_folder="F",
-            cloud_hash="h", vault_path="/v/x.md",
-            ocr_engine="t", page_count=1, action_count=0,
+            doc_id="u1",
+            doc_name="x",
+            parent_folder="F",
+            cloud_hash="h",
+            vault_path="/v/x.md",
+            ocr_engine="t",
+            page_count=1,
+            action_count=0,
             user_id=5,
         )
         state.mark_synced(
-            doc_id="u2", doc_name="y", parent_folder="F",
-            cloud_hash="h", vault_path="/v/y.md",
-            ocr_engine="t", page_count=1, action_count=0,
+            doc_id="u2",
+            doc_name="y",
+            parent_folder="F",
+            cloud_hash="h",
+            vault_path="/v/y.md",
+            ocr_engine="t",
+            page_count=1,
+            action_count=0,
             user_id=9,
         )
         only_5 = state.list_synced(user_id=5)

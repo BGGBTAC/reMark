@@ -67,8 +67,11 @@ class SyncScheduler:
 
             logger.info(
                 "Cycle complete: %d/%d processed, %d skipped, %d errors (%dms)",
-                report.success_count, report.total,
-                report.skipped, report.errors, report.duration_ms,
+                report.success_count,
+                report.total,
+                report.skipped,
+                report.errors,
+                report.duration_ms,
             )
 
         except Exception as e:

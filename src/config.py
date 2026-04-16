@@ -123,6 +123,7 @@ class SyncConfig(BaseModel):
 
 class ResponseConfig(BaseModel):
     """Controls how Claude-generated responses are pushed back to the tablet."""
+
     format: Literal["pdf", "notebook"] = "pdf"
     auto_trigger: bool = True
     trigger_on_questions: bool = True
@@ -134,8 +135,9 @@ class ResponseConfig(BaseModel):
 
 class OneNoteConfig(BaseModel):
     """OneNote vault — parallel target alongside Obsidian."""
+
     enabled: bool = False
-    notebook_name: str = "reMark"          # OneNote notebook to use
+    notebook_name: str = "reMark"  # OneNote notebook to use
     default_section: str = "Inbox"
     # Map reMarkable folder -> OneNote section. "_default" for fallback.
     folder_map: dict[str, str] = Field(default_factory=lambda: {"_default": "Inbox"})
@@ -144,18 +146,20 @@ class OneNoteConfig(BaseModel):
 
 class TeamsConfig(BaseModel):
     """Microsoft Teams integration (digest posts + meeting correlation)."""
+
     enabled: bool = False
     # Incoming Webhook URL of the target channel (simplest auth model)
     webhook_url: str = ""
     # Cadence for the digest: "daily" | "weekly" | "off"
     digest_cadence: str = "weekly"
-    digest_hour: int = 9                   # hour of the day (UTC) when digest fires
-    digest_weekday: int = 1                # 1 = Monday, for weekly
-    meeting_correlation: bool = True       # link meeting notes to Outlook events
+    digest_hour: int = 9  # hour of the day (UTC) when digest fires
+    digest_weekday: int = 1  # 1 = Monday, for weekly
+    meeting_correlation: bool = True  # link meeting notes to Outlook events
 
 
 class NotionConfig(BaseModel):
     """Notion mirror via an internal integration token."""
+
     enabled: bool = False
     integration_token_env: str = "NOTION_TOKEN"
     # ID of the Notion page under which synced notes become children.
@@ -167,6 +171,7 @@ class NotionConfig(BaseModel):
 
 class MicrosoftConfig(BaseModel):
     """Microsoft Graph integration (Outlook Tasks + Calendar + OneNote + Teams)."""
+
     enabled: bool = False
 
     # Azure AD application registration
@@ -179,12 +184,12 @@ class MicrosoftConfig(BaseModel):
 
     # Microsoft To Do sync
     todo_enabled: bool = True
-    todo_list_name: str = "reMark"      # name of the target task list
-    todo_create_list: bool = True       # auto-create the list if missing
+    todo_list_name: str = "reMark"  # name of the target task list
+    todo_create_list: bool = True  # auto-create the list if missing
 
     # Outlook Calendar sync
     calendar_enabled: bool = False
-    calendar_id: str = ""               # empty = default calendar
+    calendar_id: str = ""  # empty = default calendar
 
     # OneNote (v0.3+)
     onenote: OneNoteConfig = Field(default_factory=OneNoteConfig)
@@ -195,6 +200,7 @@ class MicrosoftConfig(BaseModel):
 
 class SearchConfig(BaseModel):
     """Semantic search / RAG configuration."""
+
     enabled: bool = False
     backend: Literal["voyage", "openai", "local"] = "local"
     model: str = ""  # backend-specific default if empty
@@ -215,6 +221,7 @@ class SearchConfig(BaseModel):
 
 class ReverseSyncConfig(BaseModel):
     """Obsidian → reMarkable reverse sync — all three triggers are independent."""
+
     enabled: bool = False
     # Trigger A: any note with `push_to_tablet: true` in frontmatter
     trigger_on_frontmatter: bool = True
@@ -225,7 +232,7 @@ class ReverseSyncConfig(BaseModel):
     trigger_on_demand: bool = True
 
     # Output format and destination folder on the tablet
-    format: str = "pdf"                     # "pdf" | "notebook"
+    format: str = "pdf"  # "pdf" | "notebook"
     target_folder: str = "From-Vault"
 
     # After pushing, stamp the note with pushed_to_tablet_at timestamp
@@ -234,6 +241,7 @@ class ReverseSyncConfig(BaseModel):
 
 class PluginConfig(BaseModel):
     """Plugin system configuration."""
+
     enabled: bool = True
     # Directory scanned for plugin modules/packages
     plugin_dir: str = "~/.config/remark/plugins"
@@ -245,6 +253,7 @@ class PluginConfig(BaseModel):
 
 class WebConfig(BaseModel):
     """Web dashboard + PWA configuration."""
+
     enabled: bool = False
     host: str = "127.0.0.1"
     port: int = 8080
@@ -268,6 +277,7 @@ class WebConfig(BaseModel):
 
 class TemplatesConfig(BaseModel):
     """On-device template engine configuration."""
+
     enabled: bool = True
     # Directory with user-defined template YAML files
     user_templates_dir: str = "~/.remark-bridge/templates"
@@ -277,6 +287,7 @@ class TemplatesConfig(BaseModel):
 
 class ReportsConfig(BaseModel):
     """Scheduled-reports configuration (v0.7+)."""
+
     enabled: bool = True
     # Scheduler tick — how often the background loop polls for due
     # reports. 60s is the right trade-off: fine-grained enough for

@@ -63,8 +63,7 @@ class OCREngine(ABC):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @abstractmethod
     async def recognize_page(self, page_image: bytes) -> OCRResult:
@@ -116,19 +115,22 @@ class OCRPipeline:
 
         for page, page_id in zip(pages, page_ids, strict=False):
             page_result = await self._process_page(
-                page, page_id, doc_dir, doc_id,
+                page,
+                page_id,
+                doc_dir,
+                doc_id,
                 typed_text.get(page_id, ""),
                 builtin_text.get(page_id, ""),
             )
             results.append(page_result)
 
         engines_used = {r.engine_used for r in results if r.text.strip()}
-        avg_confidence = (
-            sum(r.confidence for r in results) / len(results) if results else 0
-        )
+        avg_confidence = sum(r.confidence for r in results) / len(results) if results else 0
         logger.info(
             "OCR complete: %d pages, avg confidence %.2f, engines: %s",
-            len(results), avg_confidence, engines_used,
+            len(results),
+            avg_confidence,
+            engines_used,
         )
 
         return results
@@ -241,7 +243,7 @@ class OCRPipeline:
 def build_pipeline(
     config: AppConfig,
     llm_client=None,
-) -> "OCRPipeline":
+) -> OCRPipeline:
     """Construct an OCRPipeline from AppConfig.
 
     ``llm_client`` is optional — callers that already hold an LLMClient
@@ -249,7 +251,6 @@ def build_pipeline(
     rather than building a second one.  When None, a client is built from
     config on demand (Anthropic if api key is set, etc.).
     """
-    from src.config import LLMConfig  # avoid circular at module level
 
     primary: OCREngine | None = None
     fallback: OCREngine | None = None
@@ -261,7 +262,9 @@ def build_pipeline(
             client = llm_client
             if client is None:
                 import os
+
                 from src.llm.factory import build_llm_client
+
                 client = build_llm_client(
                     config.llm,
                     anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
@@ -278,10 +281,12 @@ def build_pipeline(
 
         if engine_name == "google_vision":
             from src.ocr.google_vision import GoogleVisionOCR
+
             return GoogleVisionOCR(config.ocr.google_vision)
 
         if engine_name == "remarkable_builtin":
             from src.ocr.remarkable_builtin import RemarkableBuiltinOCR
+
             return RemarkableBuiltinOCR()
 
         return None  # "none" or unknown

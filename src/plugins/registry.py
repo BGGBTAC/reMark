@@ -82,6 +82,7 @@ class PluginRegistry:
         """Load plugins registered via Python entry points."""
         try:
             from importlib.metadata import entry_points
+
             eps = entry_points(group="remark_bridge.plugins")
         except Exception as e:
             logger.debug("No entry points discovered: %s", e)
@@ -144,13 +145,15 @@ class PluginRegistry:
         for name, plugin in self._plugins.items():
             meta = plugin.metadata
             hooks = [h.__name__ for h in _HOOK_BASES if isinstance(plugin, h)]
-            result.append({
-                "name": name,
-                "version": meta.version,
-                "description": meta.description,
-                "author": meta.author,
-                "hooks": hooks,
-            })
+            result.append(
+                {
+                    "name": name,
+                    "version": meta.version,
+                    "description": meta.description,
+                    "author": meta.author,
+                    "hooks": hooks,
+                }
+            )
         return result
 
     def get(self, name: str) -> Plugin | None:

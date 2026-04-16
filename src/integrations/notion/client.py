@@ -66,12 +66,14 @@ class NotionClient:
         url = f"{NOTION_API_BASE}{path}"
         client = await self._get_client()
         resp = await client.request(
-            method, url, headers=self._headers(), json=json_body,
+            method,
+            url,
+            headers=self._headers(),
+            json=json_body,
         )
         if resp.status_code >= 400:
             raise NotionError(
-                f"Notion {method} {path} → HTTP {resp.status_code}: "
-                f"{resp.text[:300]}"
+                f"Notion {method} {path} → HTTP {resp.status_code}: {resp.text[:300]}"
             )
         return resp.json()
 
@@ -102,7 +104,9 @@ class NotionClient:
         return page_id
 
     async def append_blocks(
-        self, block_id: str, blocks: list[dict],
+        self,
+        block_id: str,
+        blocks: list[dict],
     ) -> None:
         """Append blocks to an existing block/page, paging in 100s."""
         for i in range(0, len(blocks), 100):
@@ -124,6 +128,8 @@ class NotionClient:
         if filter_:
             body["filter"] = filter_
         result = await self._request(
-            "POST", f"/databases/{database_id}/query", body,
+            "POST",
+            f"/databases/{database_id}/query",
+            body,
         )
         return result.get("results", [])

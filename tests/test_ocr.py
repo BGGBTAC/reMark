@@ -19,6 +19,7 @@ from src.remarkable.formats import parse_rm_file
 
 # -- Helpers --
 
+
 def create_rm_fixture(path: Path, text: str) -> Path:
     blocks = list(simple_text_document(text))
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -58,6 +59,7 @@ class FailingOCREngine(OCREngine):
 
 # -- _merge_texts --
 
+
 class TestMergeTexts:
     def test_empty_typed(self):
         assert _merge_texts("", "OCR text here") == "OCR text here"
@@ -84,6 +86,7 @@ class TestMergeTexts:
 
 
 # -- OCRPipeline --
+
 
 class TestOCRPipeline:
     @pytest.mark.asyncio
@@ -124,9 +127,7 @@ class TestOCRPipeline:
 
         conv_dir = doc_dir / f"{doc_id}.textconversion"
         conv_dir.mkdir()
-        (conv_dir / "page-1.json").write_text(
-            json.dumps({"text": "MyScript converted text"})
-        )
+        (conv_dir / "page-1.json").write_text(json.dumps({"text": "MyScript converted text"}))
 
         page = parse_rm_file(doc_dir / "page-1.rm")
         pipeline = OCRPipeline(OCRConfig())
@@ -193,6 +194,7 @@ class TestOCRPipeline:
 
 # -- RemarkableBuiltinOCR --
 
+
 class TestRemarkableBuiltinOCR:
     def test_reads_text_format(self, tmp_path):
         conv_file = tmp_path / "page-1.json"
@@ -243,8 +245,16 @@ class TestRemarkableBuiltinOCR:
         data = {
             "text": "Hello World",
             "words": [
-                {"label": "Hello", "confidence": 0.95, "boundingBox": {"x": 10, "y": 20, "width": 50, "height": 15}},
-                {"label": "World", "confidence": 0.92, "boundingBox": {"x": 70, "y": 20, "width": 55, "height": 15}},
+                {
+                    "label": "Hello",
+                    "confidence": 0.95,
+                    "boundingBox": {"x": 10, "y": 20, "width": 50, "height": 15},
+                },
+                {
+                    "label": "World",
+                    "confidence": 0.92,
+                    "boundingBox": {"x": 70, "y": 20, "width": 55, "height": 15},
+                },
             ],
         }
         conv_file = tmp_path / "boxes.json"
@@ -261,6 +271,7 @@ class TestRemarkableBuiltinOCR:
 
 
 # -- PageText dataclass --
+
 
 class TestPageText:
     def test_basic_creation(self):

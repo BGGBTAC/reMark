@@ -1,7 +1,5 @@
 """Tests for Obsidian vault operations, frontmatter, templates, and git sync."""
 
-
-
 from src.obsidian.frontmatter import generate_frontmatter, update_frontmatter
 from src.obsidian.git_sync import GitSync
 from src.obsidian.templates import format_action_index, format_note_content
@@ -19,6 +17,7 @@ from src.remarkable.formats import Notebook, PageContent, TextBlock
 # =====================
 # _sanitize_filename
 # =====================
+
 
 class TestSanitizeFilename:
     def test_basic_name(self):
@@ -45,6 +44,7 @@ class TestSanitizeFilename:
 # =====================
 # _format_note / _parse_note
 # =====================
+
 
 class TestFormatParseNote:
     def test_roundtrip(self):
@@ -78,6 +78,7 @@ class TestFormatParseNote:
 # =====================
 # ObsidianVault
 # =====================
+
 
 class TestObsidianVault:
     def test_resolve_path_mapped(self, tmp_path):
@@ -171,11 +172,14 @@ class TestObsidianVault:
         assert results[0].name == "note1.md"
 
     def test_ensure_structure(self, tmp_path):
-        vault = ObsidianVault(tmp_path, {
-            "Work": "Notes/Work",
-            "Personal": "Notes/Personal",
-            "_default": "Inbox",
-        })
+        vault = ObsidianVault(
+            tmp_path,
+            {
+                "Work": "Notes/Work",
+                "Personal": "Notes/Personal",
+                "_default": "Inbox",
+            },
+        )
         vault.ensure_structure()
 
         assert (tmp_path / "Notes" / "Work").is_dir()
@@ -188,6 +192,7 @@ class TestObsidianVault:
 # =====================
 # generate_frontmatter
 # =====================
+
 
 class TestGenerateFrontmatter:
     def test_basic_frontmatter(self):
@@ -249,6 +254,7 @@ class TestUpdateFrontmatter:
 # format_note_content
 # =====================
 
+
 class TestFormatNoteContent:
     def test_basic_content(self):
         result = format_note_content("# Title\n\nSome content")
@@ -307,10 +313,12 @@ class TestFormatActionIndex:
 # GitSync
 # =====================
 
+
 class TestGitSync:
     def test_init_with_valid_repo(self, tmp_path):
         # Init a real git repo
         from git import Repo
+
         Repo.init(tmp_path)
 
         gs = GitSync(tmp_path)
@@ -322,6 +330,7 @@ class TestGitSync:
 
     def test_has_changes(self, tmp_path):
         from git import Repo
+
         Repo.init(tmp_path)
 
         gs = GitSync(tmp_path)
@@ -333,6 +342,7 @@ class TestGitSync:
 
     def test_commit(self, tmp_path):
         from git import Repo
+
         repo = Repo.init(tmp_path)
         # Need at least one commit for HEAD to be valid
         (tmp_path / "init.md").write_text("init")
@@ -351,6 +361,7 @@ class TestGitSync:
 
     def test_commit_nothing(self, tmp_path):
         from git import Repo
+
         repo = Repo.init(tmp_path)
         (tmp_path / "init.md").write_text("init")
         repo.index.add(["init.md"])
@@ -361,6 +372,7 @@ class TestGitSync:
 
     def test_status(self, tmp_path):
         from git import Repo
+
         repo = Repo.init(tmp_path)
         (tmp_path / "init.md").write_text("init")
         repo.index.add(["init.md"])

@@ -69,11 +69,10 @@ class NoteSummarizer:
             logger.warning("Summarization failed: %s", e)
             return _fallback_summary(text, notebook_name)
 
-    async def summarize_batch(
-        self, notes: list[tuple[str, str]]
-    ) -> list[NoteSummary]:
+    async def summarize_batch(self, notes: list[tuple[str, str]]) -> list[NoteSummary]:
         """Summarize multiple notes. Each entry is (text, notebook_name)."""
         import asyncio
+
         tasks = [self.summarize(text, name) for text, name in notes]
         return await asyncio.gather(*tasks)
 

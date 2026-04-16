@@ -9,6 +9,7 @@ Long-lived protocol clients (RemarkableCloud, Notion) already manage
 their own pools and should NOT switch to this one — they have
 provider-specific interceptors and lifecycles.
 """
+
 from __future__ import annotations
 
 import httpx

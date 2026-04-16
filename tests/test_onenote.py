@@ -16,6 +16,7 @@ from src.integrations.microsoft.onenote import (
 # Markdown → HTML
 # =====================
 
+
 class TestMarkdownConversion:
     def test_basic_heading(self):
         html = _markdown_to_onenote_html("t", "# Heading\n\nBody", [])
@@ -81,16 +82,19 @@ class TestInlineFormat:
 # OneNoteClient
 # =====================
 
+
 class TestOneNoteClient:
     @pytest.mark.asyncio
     async def test_get_or_create_notebook_existing(self):
         graph = MagicMock()
-        graph.get = AsyncMock(return_value={
-            "value": [
-                {"id": "nb-1", "displayName": "reMark"},
-                {"id": "nb-2", "displayName": "Other"},
-            ],
-        })
+        graph.get = AsyncMock(
+            return_value={
+                "value": [
+                    {"id": "nb-1", "displayName": "reMark"},
+                    {"id": "nb-2", "displayName": "Other"},
+                ],
+            }
+        )
         config = OneNoteConfig(enabled=True, notebook_name="reMark")
         client = OneNoteClient(graph, config)
 
@@ -114,10 +118,12 @@ class TestOneNoteClient:
     @pytest.mark.asyncio
     async def test_get_or_create_section_existing(self):
         graph = MagicMock()
-        graph.get = AsyncMock(side_effect=[
-            {"value": [{"id": "nb-1", "displayName": "reMark"}]},
-            {"value": [{"id": "sec-1", "displayName": "Inbox"}]},
-        ])
+        graph.get = AsyncMock(
+            side_effect=[
+                {"value": [{"id": "nb-1", "displayName": "reMark"}]},
+                {"value": [{"id": "sec-1", "displayName": "Inbox"}]},
+            ]
+        )
 
         config = OneNoteConfig(enabled=True)
         client = OneNoteClient(graph, config)
@@ -130,10 +136,12 @@ class TestOneNoteClient:
         from src.integrations.microsoft.graph import GraphError
 
         graph = MagicMock()
-        graph.get = AsyncMock(side_effect=[
-            {"value": [{"id": "nb-1", "displayName": "reMark"}]},
-            {"value": []},
-        ])
+        graph.get = AsyncMock(
+            side_effect=[
+                {"value": [{"id": "nb-1", "displayName": "reMark"}]},
+                {"value": []},
+            ]
+        )
 
         config = OneNoteConfig(enabled=True, create_missing_sections=False)
         client = OneNoteClient(graph, config)
@@ -144,10 +152,12 @@ class TestOneNoteClient:
     @pytest.mark.asyncio
     async def test_section_cache(self):
         graph = MagicMock()
-        graph.get = AsyncMock(side_effect=[
-            {"value": [{"id": "nb-1", "displayName": "reMark"}]},
-            {"value": [{"id": "sec-1", "displayName": "Inbox"}]},
-        ])
+        graph.get = AsyncMock(
+            side_effect=[
+                {"value": [{"id": "nb-1", "displayName": "reMark"}]},
+                {"value": [{"id": "sec-1", "displayName": "Inbox"}]},
+            ]
+        )
 
         config = OneNoteConfig(enabled=True)
         client = OneNoteClient(graph, config)
@@ -172,10 +182,12 @@ class TestOneNoteClient:
     async def test_write_page_posts_html(self):
         # Mock graph client with async context via auth token call
         graph = MagicMock()
-        graph.get = AsyncMock(side_effect=[
-            {"value": [{"id": "nb-1", "displayName": "reMark"}]},
-            {"value": [{"id": "sec-1", "displayName": "Inbox"}]},
-        ])
+        graph.get = AsyncMock(
+            side_effect=[
+                {"value": [{"id": "nb-1", "displayName": "reMark"}]},
+                {"value": [{"id": "sec-1", "displayName": "Inbox"}]},
+            ]
+        )
         auth = MagicMock()
         auth.get_access_token = AsyncMock(return_value="token-abc")
         graph._auth = auth
@@ -206,10 +218,12 @@ class TestOneNoteClient:
         from src.integrations.microsoft.graph import GraphError
 
         graph = MagicMock()
-        graph.get = AsyncMock(side_effect=[
-            {"value": [{"id": "nb-1", "displayName": "reMark"}]},
-            {"value": [{"id": "sec-1", "displayName": "Inbox"}]},
-        ])
+        graph.get = AsyncMock(
+            side_effect=[
+                {"value": [{"id": "nb-1", "displayName": "reMark"}]},
+                {"value": [{"id": "sec-1", "displayName": "Inbox"}]},
+            ]
+        )
         auth = MagicMock()
         auth.get_access_token = AsyncMock(return_value="t")
         graph._auth = auth

@@ -51,7 +51,9 @@ class AuthManager:
         return self._device_token
 
     async def get_user_token(
-        self, *, http_pool: SharedHttpPool | None = None,
+        self,
+        *,
+        http_pool: SharedHttpPool | None = None,
     ) -> str:
         """Return a valid user token, refreshing if expired."""
         if self._user_token and time.time() < self._user_token_expiry - 300:
@@ -63,7 +65,10 @@ class AuthManager:
         return self._user_token
 
     async def register_device(
-        self, code: str, *, http_pool: SharedHttpPool | None = None,
+        self,
+        code: str,
+        *,
+        http_pool: SharedHttpPool | None = None,
     ) -> str:
         """Register a new device with a one-time code from my.remarkable.com.
 
@@ -95,9 +100,7 @@ class AuthManager:
                 )
 
         if resp.status_code != 200:
-            raise AuthError(
-                f"Device registration failed (HTTP {resp.status_code}): {resp.text}"
-            )
+            raise AuthError(f"Device registration failed (HTTP {resp.status_code}): {resp.text}")
 
         token = resp.text.strip()
         if not token:
@@ -109,7 +112,9 @@ class AuthManager:
         return token
 
     async def _refresh_user_token(
-        self, *, http_pool: SharedHttpPool | None = None,
+        self,
+        *,
+        http_pool: SharedHttpPool | None = None,
     ) -> str:
         """Exchange device token for a fresh user token.
 
@@ -182,7 +187,9 @@ class AuthManager:
         parent = self._device_token_path.parent
         parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(
-            prefix=".device_token.", suffix=".tmp", dir=str(parent),
+            prefix=".device_token.",
+            suffix=".tmp",
+            dir=str(parent),
         )
         try:
             os.chmod(tmp_name, 0o600)
@@ -201,7 +208,8 @@ class AuthManager:
 
 
 def device_token_path_for(
-    device_id: str, base_dir: str | Path = "~/.remark-bridge",
+    device_id: str,
+    base_dir: str | Path = "~/.remark-bridge",
 ) -> Path:
     """Return the conventional token path for a named device.
 

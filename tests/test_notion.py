@@ -24,15 +24,20 @@ class TestMarkdownToBlocks:
         blocks = markdown_to_blocks(content)
         paragraphs = [b for b in blocks if b["type"] == "paragraph"]
         assert len(paragraphs) == 2
-        assert "First line\nof paragraph." in paragraphs[0]["paragraph"]["rich_text"][0]["text"]["content"]
+        assert (
+            "First line\nof paragraph."
+            in paragraphs[0]["paragraph"]["rich_text"][0]["text"]["content"]
+        )
 
     def test_bulleted_and_numbered_lists(self):
         content = "- one\n- two\n1. first\n2. second"
         blocks = markdown_to_blocks(content)
         types = [b["type"] for b in blocks]
         assert types == [
-            "bulleted_list_item", "bulleted_list_item",
-            "numbered_list_item", "numbered_list_item",
+            "bulleted_list_item",
+            "bulleted_list_item",
+            "numbered_list_item",
+            "numbered_list_item",
         ]
 
     def test_todo_detection(self):
@@ -106,7 +111,9 @@ class TestNotionService:
 
         service._client = _FakeClient()
         result = await service.write_note(
-            "My note", "Body text.", tags=["project/foo", "meeting"],
+            "My note",
+            "Body text.",
+            tags=["project/foo", "meeting"],
         )
         assert result is not None
         assert result.page_id == "new-page-id"

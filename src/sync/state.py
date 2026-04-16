@@ -252,7 +252,8 @@ class SyncState:
             # already serializes writes; the GIL + FastAPI's per-request
             # sequential semantics prevent overlapping mutations.
             self._conn = sqlite3.connect(
-                str(self._db_path), check_same_thread=False,
+                str(self._db_path),
+                check_same_thread=False,
             )
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA journal_mode=WAL")
@@ -271,13 +272,9 @@ class SyncState:
         need a dedicated migration step. Dashboard widgets and the
         offline queue both do ``WHERE status = ?`` scans — covered now.
         """
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_state_status ON sync_state(status)")
         self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_sync_state_status "
-            "ON sync_state(status)"
-        )
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_sync_state_synced_at "
-            "ON sync_state(last_synced_at)"
+            "CREATE INDEX IF NOT EXISTS idx_sync_state_synced_at ON sync_state(last_synced_at)"
         )
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_external_links_provider_status "
@@ -293,19 +290,16 @@ class SyncState:
         """
         # v0.4.0 — sync_state.device_id
         cols = {
-            row["name"]
-            for row in self.conn.execute("PRAGMA table_info(sync_state)").fetchall()
+            row["name"] for row in self.conn.execute("PRAGMA table_info(sync_state)").fetchall()
         }
         if "device_id" not in cols:
             self.conn.execute(
-                "ALTER TABLE sync_state "
-                "ADD COLUMN device_id TEXT NOT NULL DEFAULT 'default'"
+                "ALTER TABLE sync_state ADD COLUMN device_id TEXT NOT NULL DEFAULT 'default'"
             )
         # Index creation lives here so fresh installs and upgraded ones
         # both get it, and pre-0.4 DBs don't trip on a missing column.
         self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_sync_state_device "
-            "ON sync_state(device_id)"
+            "CREATE INDEX IF NOT EXISTS idx_sync_state_device ON sync_state(device_id)"
         )
 
         # v0.7.0 — per-user isolation. sync_state and devices grow a
@@ -313,23 +307,14 @@ class SyncState:
         # Pre-0.7 rows default to 1 (the implicit "admin" user seeded
         # below), preserving existing data during upgrade.
         if "user_id" not in cols:
-            self.conn.execute(
-                "ALTER TABLE sync_state ADD COLUMN user_id INTEGER DEFAULT 1"
-            )
+            self.conn.execute("ALTER TABLE sync_state ADD COLUMN user_id INTEGER DEFAULT 1")
         device_cols = {
-            row["name"]
-            for row in self.conn.execute("PRAGMA table_info(devices)").fetchall()
+            row["name"] for row in self.conn.execute("PRAGMA table_info(devices)").fetchall()
         }
         if device_cols and "user_id" not in device_cols:
-            self.conn.execute(
-                "ALTER TABLE devices ADD COLUMN user_id INTEGER DEFAULT 1"
-            )
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_sync_state_user ON sync_state(user_id)"
-        )
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_devices_user ON devices(user_id)"
-        )
+            self.conn.execute("ALTER TABLE devices ADD COLUMN user_id INTEGER DEFAULT 1")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_state_user ON sync_state(user_id)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_devices_user ON devices(user_id)")
 
     def needs_sync(self, doc_id: str, cloud_hash: str) -> bool:
         """Check if a document needs processing.
@@ -386,9 +371,21 @@ class SyncState:
                  device_id = excluded.device_id,
                  user_id = excluded.user_id
             """,
-            (doc_id, doc_name, parent_folder, cloud_hash, cloud_hash,
-             doc_id, now, vault_path, ocr_engine, page_count, action_count,
-             device_id, user_id),
+            (
+                doc_id,
+                doc_name,
+                parent_folder,
+                cloud_hash,
+                cloud_hash,
+                doc_id,
+                now,
+                vault_path,
+                ocr_engine,
+                page_count,
+                action_count,
+                device_id,
+                user_id,
+            ),
         )
         self.conn.commit()
         self._log("sync", doc_id, f"synced {doc_name}")
@@ -459,9 +456,7 @@ class SyncState:
         doc_id = row.get("doc_id")
         if not doc_id:
             return None
-        cache_path = (
-            Path("~/.remark-bridge/cache").expanduser() / doc_id / "last.rm"
-        )
+        cache_path = Path("~/.remark-bridge/cache").expanduser() / doc_id / "last.rm"
         if not cache_path.exists():
             return None
         return cache_path.read_bytes()
@@ -521,7 +516,9 @@ class SyncState:
         return [dict(r) for r in rows]
 
     def recent_synced(
-        self, limit: int = 10, user_id: int | None = None,
+        self,
+        limit: int = 10,
+        user_id: int | None = None,
     ) -> list[dict]:
         """Return the N most-recently-synced documents.
 
@@ -565,9 +562,7 @@ class SyncState:
 
     def get_doc_state(self, doc_id: str) -> dict | None:
         """Get the sync state for a specific document."""
-        row = self.conn.execute(
-            "SELECT * FROM sync_state WHERE doc_id = ?", (doc_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM sync_state WHERE doc_id = ?", (doc_id,)).fetchone()
         return dict(row) if row else None
 
     def get_sync_stats(self) -> SyncStats:
@@ -762,7 +757,11 @@ class SyncState:
     # -- Web push subscriptions --
 
     def add_webpush_subscription(
-        self, endpoint: str, p256dh: str, auth: str, user_agent: str = "",
+        self,
+        endpoint: str,
+        p256dh: str,
+        auth: str,
+        user_agent: str = "",
     ) -> int:
         """Register a Web Push subscription. Returns the row ID."""
         now = datetime.now(UTC).isoformat()
@@ -783,7 +782,8 @@ class SyncState:
     def remove_webpush_subscription(self, endpoint: str) -> None:
         """Remove a subscription (e.g. after 410 Gone response)."""
         self.conn.execute(
-            "DELETE FROM webpush_subscriptions WHERE endpoint = ?", (endpoint,),
+            "DELETE FROM webpush_subscriptions WHERE endpoint = ?",
+            (endpoint,),
         )
         self.conn.commit()
 
@@ -815,7 +815,8 @@ class SyncState:
     def is_plugin_enabled(self, name: str) -> bool:
         """Check if a plugin is enabled. Defaults to True if not yet registered."""
         row = self.conn.execute(
-            "SELECT enabled FROM plugin_state WHERE name = ?", (name,),
+            "SELECT enabled FROM plugin_state WHERE name = ?",
+            (name,),
         ).fetchone()
         if row is None:
             return True
@@ -824,7 +825,9 @@ class SyncState:
     # -- Template instances --
 
     def record_template_push(
-        self, doc_id: str, template_name: str,
+        self,
+        doc_id: str,
+        template_name: str,
     ) -> None:
         """Record that a template was pushed to the tablet."""
         now = datetime.now(UTC).isoformat()
@@ -848,15 +851,15 @@ class SyncState:
     def get_template_for_doc(self, doc_id: str) -> dict | None:
         """Look up whether a document was a pushed template."""
         row = self.conn.execute(
-            "SELECT * FROM template_instances WHERE doc_id = ?", (doc_id,),
+            "SELECT * FROM template_instances WHERE doc_id = ?",
+            (doc_id,),
         ).fetchone()
         return dict(row) if row else None
 
     def mark_external_link_completed(self, provider: str, external_id: str) -> None:
         """Mark an external link as completed (e.g. task was marked done)."""
         self.conn.execute(
-            "UPDATE external_links SET status = 'completed' "
-            "WHERE provider = ? AND external_id = ?",
+            "UPDATE external_links SET status = 'completed' WHERE provider = ? AND external_id = ?",
             (provider, external_id),
         )
         self.conn.commit()
@@ -886,13 +889,15 @@ class SyncState:
 
     def get_user(self, username: str) -> dict | None:
         row = self.conn.execute(
-            "SELECT * FROM users WHERE username = ?", (username,),
+            "SELECT * FROM users WHERE username = ?",
+            (username,),
         ).fetchone()
         return dict(row) if row else None
 
     def get_user_by_id(self, user_id: int) -> dict | None:
         row = self.conn.execute(
-            "SELECT * FROM users WHERE id = ?", (user_id,),
+            "SELECT * FROM users WHERE id = ?",
+            (user_id,),
         ).fetchone()
         return dict(row) if row else None
 
@@ -955,8 +960,16 @@ class SyncState:
                   status, ip, user_agent, details)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                datetime.now(UTC).isoformat(), user_id, username, action,
-                resource, method, status, ip, (user_agent or "")[:255], details,
+                datetime.now(UTC).isoformat(),
+                user_id,
+                username,
+                action,
+                resource,
+                method,
+                status,
+                ip,
+                (user_agent or "")[:255],
+                details,
             ),
         )
         self.conn.commit()
@@ -991,11 +1004,10 @@ class SyncState:
         return [dict(r) for r in rows]
 
     def audit_prune(self, retention_days: int) -> int:
-        cutoff = (
-            datetime.now(UTC) - timedelta(days=retention_days)
-        ).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
         cur = self.conn.execute(
-            "DELETE FROM audit_log WHERE ts < ?", (cutoff,),
+            "DELETE FROM audit_log WHERE ts < ?",
+            (cutoff,),
         )
         self.conn.commit()
         return cur.rowcount or 0
@@ -1020,8 +1032,13 @@ class SyncState:
                   created_by, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
-                name, schedule, prompt, _json.dumps(channels),
-                1 if enabled else 0, created_by, now,
+                name,
+                schedule,
+                prompt,
+                _json.dumps(channels),
+                1 if enabled else 0,
+                created_by,
+                now,
             ),
         )
         self.conn.commit()
@@ -1079,13 +1096,15 @@ class SyncState:
 
     def get_report(self, report_id: int) -> dict | None:
         row = self.conn.execute(
-            "SELECT * FROM reports WHERE id = ?", (report_id,),
+            "SELECT * FROM reports WHERE id = ?",
+            (report_id,),
         ).fetchone()
         return dict(row) if row else None
 
     def get_report_by_name(self, name: str) -> dict | None:
         row = self.conn.execute(
-            "SELECT * FROM reports WHERE name = ?", (name,),
+            "SELECT * FROM reports WHERE name = ?",
+            (name,),
         ).fetchone()
         return dict(row) if row else None
 
@@ -1147,8 +1166,7 @@ class SyncState:
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
 
         rows = self.conn.execute(
-            "SELECT id, label, token_hash FROM bridge_tokens "
-            "WHERE revoked = 0"
+            "SELECT id, label, token_hash FROM bridge_tokens WHERE revoked = 0"
         ).fetchall()
 
         match_id: int | None = None
@@ -1236,8 +1254,7 @@ class SyncState:
         """Return queue entries — for the CLI and web widgets."""
         if status:
             rows = self.conn.execute(
-                "SELECT * FROM sync_queue WHERE status = ? "
-                "ORDER BY id DESC LIMIT 200",
+                "SELECT * FROM sync_queue WHERE status = ? ORDER BY id DESC LIMIT 200",
                 (status,),
             ).fetchall()
         else:
@@ -1280,7 +1297,7 @@ class SyncState:
         max_attempts = int(row["max_attempts"])
         status = "failed" if attempts >= max_attempts else "pending"
 
-        backoff_sec = min(5 ** attempts * 60, 6 * 3600)
+        backoff_sec = min(5**attempts * 60, 6 * 3600)
         next_at = datetime.now(UTC).timestamp() + backoff_sec
         next_iso = datetime.fromtimestamp(next_at, tz=UTC).isoformat()
 
@@ -1310,7 +1327,8 @@ class SyncState:
         """Delete queue rows. Returns number removed."""
         if status:
             cur = self.conn.execute(
-                "DELETE FROM sync_queue WHERE status = ?", (status,),
+                "DELETE FROM sync_queue WHERE status = ?",
+                (status,),
             )
         else:
             cur = self.conn.execute("DELETE FROM sync_queue")
@@ -1349,7 +1367,9 @@ class SyncState:
         self._log("device", None, f"registered {device_id} ({label})")
 
     def list_devices(
-        self, active_only: bool = True, user_id: int | None = None,
+        self,
+        active_only: bool = True,
+        user_id: int | None = None,
     ) -> list[dict]:
         """Return registered devices, most recently used first.
 
@@ -1372,14 +1392,16 @@ class SyncState:
 
     def get_device(self, device_id: str) -> dict | None:
         row = self.conn.execute(
-            "SELECT * FROM devices WHERE id = ?", (device_id,),
+            "SELECT * FROM devices WHERE id = ?",
+            (device_id,),
         ).fetchone()
         return dict(row) if row else None
 
     def deactivate_device(self, device_id: str) -> None:
         """Soft-delete: set active=0 so historic sync rows keep their FK."""
         self.conn.execute(
-            "UPDATE devices SET active = 0 WHERE id = ?", (device_id,),
+            "UPDATE devices SET active = 0 WHERE id = ?",
+            (device_id,),
         )
         self.conn.commit()
         self._log("device", None, f"deactivated {device_id}")

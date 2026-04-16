@@ -21,6 +21,7 @@ from src.response.uploader import ResponseUploader
 # _extract_questions
 # =====================
 
+
 class TestExtractQuestions:
     def test_q_pattern(self):
         text = "Some notes\nQ: What is the deadline?\nMore notes"
@@ -55,6 +56,7 @@ class TestExtractQuestions:
 # =====================
 # _extract_action_items
 # =====================
+
 
 class TestExtractActionItems:
     def test_simple_checkbox(self):
@@ -100,6 +102,7 @@ class TestExtractActionItems:
 # _extract_wiki_links
 # =====================
 
+
 class TestExtractWikiLinks:
     def test_single_link(self):
         links = _extract_wiki_links("See [[Meeting Notes]] for context")
@@ -123,6 +126,7 @@ class TestExtractWikiLinks:
 # =====================
 # _format_as_markdown
 # =====================
+
 
 class TestFormatAsMarkdown:
     def test_full_content(self):
@@ -169,6 +173,7 @@ class TestFormatAsMarkdown:
 # should_auto_trigger
 # =====================
 
+
 class TestShouldAutoTrigger:
     def test_disabled(self):
         config = ResponseConfig(auto_trigger=False)
@@ -198,6 +203,7 @@ class TestShouldAutoTrigger:
 # =====================
 # ResponseGenerator
 # =====================
+
 
 class TestResponseGenerator:
     @pytest.mark.asyncio
@@ -253,6 +259,7 @@ class TestResponseGenerator:
     @pytest.mark.asyncio
     async def test_qa_generation(self, tmp_path):
         import json
+
         vault = ObsidianVault(tmp_path, {"_default": "Inbox"})
         note_path = tmp_path / "Inbox" / "q.md"
         vault.write_note(
@@ -263,9 +270,15 @@ class TestResponseGenerator:
 
         mock_client = AsyncMock()
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text=json.dumps([
-            {"question": "What is the budget?", "answer": "$50k for Q2"},
-        ]))]
+        mock_response.content = [
+            MagicMock(
+                text=json.dumps(
+                    [
+                        {"question": "What is the budget?", "answer": "$50k for Q2"},
+                    ]
+                )
+            )
+        ]
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
         config = ResponseConfig(
@@ -283,6 +296,7 @@ class TestResponseGenerator:
     @pytest.mark.asyncio
     async def test_qa_handles_code_block_response(self, tmp_path):
         import json
+
         vault = ObsidianVault(tmp_path, {"_default": "Inbox"})
         note_path = tmp_path / "Inbox" / "qcb.md"
         vault.write_note(
@@ -293,7 +307,9 @@ class TestResponseGenerator:
 
         mock_client = AsyncMock()
         mock_response = MagicMock()
-        wrapped = "```json\n" + json.dumps([{"question": "Quick question?", "answer": "Yes"}]) + "\n```"
+        wrapped = (
+            "```json\n" + json.dumps([{"question": "Quick question?", "answer": "Yes"}]) + "\n```"
+        )
         mock_response.content = [MagicMock(text=wrapped)]
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
@@ -308,6 +324,7 @@ class TestResponseGenerator:
 # ResponseUploader notebook
 # =====================
 
+
 class TestResponseUploaderNotebook:
     @pytest.mark.asyncio
     async def test_upload_notebook_bundle(self):
@@ -315,17 +332,19 @@ class TestResponseUploaderNotebook:
         from src.remarkable.cloud import DocumentMetadata
 
         cloud = AsyncMock()
-        cloud.list_items = AsyncMock(return_value=[
-            DocumentMetadata(
-                id="folder-1",
-                name="Responses",
-                parent="",
-                doc_type="CollectionType",
-                version=1,
-                hash="",
-                modified="",
-            ),
-        ])
+        cloud.list_items = AsyncMock(
+            return_value=[
+                DocumentMetadata(
+                    id="folder-1",
+                    name="Responses",
+                    parent="",
+                    doc_type="CollectionType",
+                    version=1,
+                    hash="",
+                    modified="",
+                ),
+            ]
+        )
         cloud.upload_document = AsyncMock(return_value="new-nb-id")
 
         uploader = ResponseUploader(cloud, response_folder="Responses")

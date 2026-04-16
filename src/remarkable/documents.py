@@ -50,9 +50,7 @@ class DocumentManager:
         all_items = await self._cloud.list_items()
 
         # Build folder lookup: id -> name
-        self._folder_cache = {
-            item.id: item.name for item in all_items if item.is_folder
-        }
+        self._folder_cache = {item.id: item.name for item in all_items if item.is_folder}
 
         documents = [item for item in all_items if not item.is_folder]
 
@@ -76,7 +74,10 @@ class DocumentManager:
 
         logger.info(
             "Filtered %d -> %d documents (sync: %s, ignore: %s)",
-            len(documents), len(filtered), sync_folders, ignore_folders,
+            len(documents),
+            len(filtered),
+            sync_folders,
+            ignore_folders,
         )
         return filtered
 
@@ -114,7 +115,9 @@ class DocumentManager:
 
         logger.info(
             "Downloaded '%s' (%d pages, folder: %s)",
-            name, resolved.page_count, folder_path or "root",
+            name,
+            resolved.page_count,
+            folder_path or "root",
         )
         return resolved
 
@@ -180,6 +183,7 @@ class DocumentManager:
     def cleanup(self, doc_id: str) -> None:
         """Remove downloaded files for a document."""
         import shutil
+
         doc_dir = self._download_dir / doc_id
         if doc_dir.exists():
             shutil.rmtree(doc_dir)

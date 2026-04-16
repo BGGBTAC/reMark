@@ -34,12 +34,14 @@ class AtMentionExtractor(ActionExtractorHook):
                 if user.lower() in seen:
                     continue
                 seen.add(user.lower())
-                actions.append({
-                    "task": f"Follow up with @{user}: {line.strip()[:120]}",
-                    "type": "followup",
-                    "priority": "high",
-                    "assignee": user,
-                    "source_context": line.strip(),
-                })
+                actions.append(
+                    {
+                        "task": f"Follow up with @{user}: {line.strip()[:120]}",
+                        "type": "followup",
+                        "priority": "high",
+                        "assignee": user,
+                        "source_context": line.strip(),
+                    }
+                )
 
         return actions

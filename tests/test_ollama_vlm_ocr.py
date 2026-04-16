@@ -1,7 +1,8 @@
 """VLMOcr — delegates vision to any LLMClient (Anthropic or Ollama)."""
+
 from __future__ import annotations
 
-from src.llm.client import LLMClient, LLMMessage, LLMResponse
+from src.llm.client import LLMClient, LLMResponse
 from src.ocr.vlm import VLMOcr
 
 
@@ -19,8 +20,10 @@ class _VisionStub(LLMClient):
         self.calls.append((system, image, prompt, model))
         return LLMResponse(
             text=self._text,
-            input_tokens=10, output_tokens=5,
-            provider=self.provider, model=model,
+            input_tokens=10,
+            output_tokens=5,
+            provider=self.provider,
+            model=model,
         )
 
 

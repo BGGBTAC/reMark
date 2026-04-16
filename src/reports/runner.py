@@ -20,7 +20,7 @@ class ReportResult:
     name: str
     content: str
     channels_ok: list[str]
-    channels_failed: list[tuple[str, str]]   # (channel, error)
+    channels_failed: list[tuple[str, str]]  # (channel, error)
 
     @property
     def ok(self) -> bool:
@@ -126,11 +126,7 @@ async def _generate_summary(
     if llm is None:
         # No LLM available — fall back to a plain stats dump so the channel
         # delivery path is still exercised in demo / offline mode.
-        return (
-            f"# {report['name']}\n\n"
-            f"_No LLM configured; raw context dump:_\n\n"
-            f"{context}\n"
-        )
+        return f"# {report['name']}\n\n_No LLM configured; raw context dump:_\n\n{context}\n"
 
     response = await llm.complete(
         system=_SYSTEM_PROMPT,
@@ -157,13 +153,7 @@ def _deliver_vault(config: AppConfig, name: str, content: str) -> None:
     stamp = now.strftime("%Y-%m-%d")
     slug = name.replace(" ", "-").lower()
     path = reports_dir / f"{stamp}-{slug}.md"
-    fm = (
-        "---\n"
-        f"title: {name} — {stamp}\n"
-        "source: report\n"
-        f"generated_at: {now.isoformat()}\n"
-        "---\n\n"
-    )
+    fm = f"---\ntitle: {name} — {stamp}\nsource: report\ngenerated_at: {now.isoformat()}\n---\n\n"
     path.write_text(fm + content, encoding="utf-8")
 
 
@@ -176,19 +166,19 @@ async def _deliver_teams(config: AppConfig, name: str, content: str) -> None:
 
     card = {
         "type": "message",
-        "attachments": [{
-            "contentType": "application/vnd.microsoft.card.adaptive",
-            "content": {
-                "type": "AdaptiveCard",
-                "version": "1.5",
-                "body": [
-                    {"type": "TextBlock", "size": "Large",
-                     "weight": "Bolder", "text": name},
-                    {"type": "TextBlock", "wrap": True,
-                     "text": content[:12000]},
-                ],
-            },
-        }],
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                    "type": "AdaptiveCard",
+                    "version": "1.5",
+                    "body": [
+                        {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": name},
+                        {"type": "TextBlock", "wrap": True, "text": content[:12000]},
+                    ],
+                },
+            }
+        ],
     }
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(webhook, json=card)

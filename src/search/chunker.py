@@ -108,12 +108,14 @@ def _process_section(
 
         body = "\n\n".join(buffer_parts).strip()
         if body:
-            chunks.append(Chunk(
-                index=index[0],
-                content=restore(body),
-                heading_path=list(heading_path),
-                start_offset=offset[0],
-            ))
+            chunks.append(
+                Chunk(
+                    index=index[0],
+                    content=restore(body),
+                    heading_path=list(heading_path),
+                    start_offset=offset[0],
+                )
+            )
             index[0] += 1
             offset[0] += len(body)
 

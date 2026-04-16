@@ -4,6 +4,7 @@ Auth: Bearer token (same token as /api/push). Path traversal is blocked
 by resolving the vault-relative path and asserting the resolved target
 stays under the configured vault root.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -67,8 +68,11 @@ def _render_first_page(rm_bytes: bytes) -> bytes:
     """
     import tempfile
 
-    from src.remarkable.formats import _render_ocr_svg, _svg_to_png  # type: ignore[attr-defined]
-    from src.remarkable.formats import parse_rm_file
+    from src.remarkable.formats import (  # type: ignore[attr-defined]
+        _render_ocr_svg,
+        _svg_to_png,
+        parse_rm_file,
+    )
 
     with tempfile.NamedTemporaryFile(suffix=".rm", delete=False) as tmp:
         tmp.write(rm_bytes)

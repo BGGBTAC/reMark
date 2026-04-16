@@ -16,6 +16,7 @@ The pairing is deliberately minimal:
 This module mirrors ``src.integrations.microsoft`` so the engine can
 pick it up with the same pattern.
 """
+
 from src.integrations.notion.client import NotionClient, NotionError
 from src.integrations.notion.service import NotionService
 

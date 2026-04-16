@@ -1,9 +1,9 @@
 """Bridge API: per-note sync status and preview."""
+
 from __future__ import annotations
 
 import time
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.config import AppConfig
@@ -47,6 +47,7 @@ def _seed_sync_state(state: SyncState, vault_path: str, device_id: str = "defaul
 # ---------------------------------------------------------------------------
 # D1: GET /api/notes/{vault_path}/status
 # ---------------------------------------------------------------------------
+
 
 class TestNoteStatus:
     def test_returns_metadata(self, tmp_path):
@@ -99,6 +100,7 @@ class TestNoteStatus:
 # ---------------------------------------------------------------------------
 # D2: GET /api/notes/{vault_path}/preview
 # ---------------------------------------------------------------------------
+
 
 class TestNotePreview:
     def test_preview_404_when_no_rm_cached(self, tmp_path):

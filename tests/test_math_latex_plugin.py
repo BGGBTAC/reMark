@@ -9,14 +9,14 @@ from pathlib import Path
 import pytest
 
 _PLUGIN_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "examples" / "plugins" / "math_latex_plugin.py"
+    Path(__file__).resolve().parent.parent / "examples" / "plugins" / "math_latex_plugin.py"
 )
 
 
 def _load_plugin_module():
     spec = importlib.util.spec_from_file_location(
-        "math_latex_plugin_test", _PLUGIN_PATH,
+        "math_latex_plugin_test",
+        _PLUGIN_PATH,
     )
     module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
     sys.modules[spec.name] = module  # type: ignore[union-attr]
@@ -63,13 +63,7 @@ class TestMathLatexProcessor:
 
     @pytest.mark.asyncio
     async def test_block_environment_wrapped_with_dollar_dollar(self, processor):
-        content = (
-            "See below:\n"
-            "\\begin{equation}\n"
-            "E = mc^2\n"
-            "\\end{equation}\n"
-            "done."
-        )
+        content = "See below:\n\\begin{equation}\nE = mc^2\n\\end{equation}\ndone."
         out, _ = await processor.process(content, {})
         assert "$$\n\\begin{equation}" in out
         assert "\\end{equation}\n$$" in out

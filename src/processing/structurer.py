@@ -117,10 +117,12 @@ class NoteStructurer:
 
         response = await self._llm.complete(
             system=INCREMENTAL_PROMPT,
-            messages=[LLMMessage(
-                role="user",
-                content=f"## Existing Note\n\n{existing}\n\n## New Content\n\n{new_pages}",
-            )],
+            messages=[
+                LLMMessage(
+                    role="user",
+                    content=f"## Existing Note\n\n{existing}\n\n## New Content\n\n{new_pages}",
+                )
+            ],
             model=self._model,
             max_tokens=8192,
         )

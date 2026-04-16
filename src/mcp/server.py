@@ -40,6 +40,7 @@ def _get_state(config: AppConfig) -> SyncState:
 
 # -- Tools --
 
+
 @app.list_tools()
 async def list_tools() -> list[Tool]:
     return [
@@ -205,10 +206,12 @@ async def _tool_ask(
         return [TextContent(type="text", text="Missing required parameter: query")]
 
     if not config.search.enabled:
-        return [TextContent(
-            type="text",
-            text="Search is disabled. Enable in config.yaml under search.enabled: true.",
-        )]
+        return [
+            TextContent(
+                type="text",
+                text="Search is disabled. Enable in config.yaml under search.enabled: true.",
+            )
+        ]
 
     from src.search.backends import build_backend
     from src.search.index import VectorIndex
@@ -227,10 +230,12 @@ async def _tool_ask(
         )
 
         if index.stats()["total_chunks"] == 0:
-            return [TextContent(
-                type="text",
-                text="Index is empty. Run `remark-bridge reindex` first.",
-            )]
+            return [
+                TextContent(
+                    type="text",
+                    text="Index is empty. Run `remark-bridge reindex` first.",
+                )
+            ]
 
         client = None
         synthesize = with_answer and config.search.synthesize_answer
@@ -262,6 +267,7 @@ async def _tool_ask(
         parts.append(f"\n## Sources ({len(result.hits)})\n")
         for i, hit in enumerate(result.hits, 1):
             from pathlib import Path
+
             note_name = Path(hit.vault_path).stem
             heading = hit.heading_context
             header = f"**[{i}] [[{note_name}]]** (score: {hit.score:.2f})"
@@ -308,17 +314,21 @@ async def _tool_generate_response(
             success = await engine.generate_response_for_note(full_path, cloud)
 
         if success:
-            return [TextContent(
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"Response pushed to reMarkable folder "
+                        f"'{config.response.response_folder}' for '{note_path}'."
+                    ),
+                )
+            ]
+        return [
+            TextContent(
                 type="text",
-                text=(
-                    f"Response pushed to reMarkable folder "
-                    f"'{config.response.response_folder}' for '{note_path}'."
-                ),
-            )]
-        return [TextContent(
-            type="text",
-            text=f"Response generation failed for '{note_path}' (see server logs).",
-        )]
+                text=f"Response generation failed for '{note_path}' (see server logs).",
+            )
+        ]
 
     except Exception as e:
         return [TextContent(type="text", text=f"Error: {e}")]
@@ -464,6 +474,7 @@ def _tool_list_notes(config: AppConfig, folder: str | None) -> list[TextContent]
 
 # -- Resources --
 
+
 @app.list_resources()
 async def list_resources() -> list[Resource]:
     return [
@@ -484,13 +495,15 @@ async def read_resource(uri: str) -> str:
         state = _get_state(config)
         stats = state.get_sync_stats()
         state.close()
-        return json.dumps({
-            "total_docs": stats.total_docs,
-            "synced": stats.synced,
-            "errors": stats.errors,
-            "pending": stats.pending,
-            "last_sync": stats.last_sync,
-        })
+        return json.dumps(
+            {
+                "total_docs": stats.total_docs,
+                "synced": stats.synced,
+                "errors": stats.errors,
+                "pending": stats.pending,
+                "last_sync": stats.last_sync,
+            }
+        )
 
     return f"Unknown resource: {uri}"
 

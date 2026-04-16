@@ -11,6 +11,7 @@ from src.remarkable.auth import AuthError, AuthManager, _parse_jwt_expiry
 
 # -- Helpers --
 
+
 def _make_jwt(payload: dict, header: dict | None = None) -> str:
     """Build a fake JWT (no signature verification needed)."""
     header = header or {"alg": "HS256", "typ": "JWT"}
@@ -20,6 +21,7 @@ def _make_jwt(payload: dict, header: dict | None = None) -> str:
 
 
 # -- _parse_jwt_expiry --
+
 
 class TestParseJwtExpiry:
     def test_valid_jwt(self):
@@ -41,6 +43,7 @@ class TestParseJwtExpiry:
 
 
 # -- AuthManager --
+
 
 class TestAuthManager:
     def test_load_missing_token_raises(self, tmp_path):

@@ -1,4 +1,5 @@
 """Streaming downloads spill to disk above threshold, stay in memory below."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -89,12 +90,18 @@ async def test_streamer_error_cleans_up_temp_file(tmp_path):
     from src.remarkable.streaming import download_blob
 
     class _BrokenStream:
-        async def __aenter__(self): return self
-        async def __aexit__(self, *exc): pass
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            pass
+
         async def aiter_bytes(self, chunk_size=None):
             yield b"y" * (5 * 1024 * 1024 + 1)  # trigger spill
             raise RuntimeError("network blip")
-        def raise_for_status(self): pass
+
+        def raise_for_status(self):
+            pass
 
     def _streamer(method, url):
         return _BrokenStream()

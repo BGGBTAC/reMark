@@ -5,6 +5,7 @@ secured with the same Bearer token as /api/push. When the search index is
 not configured the endpoint returns 503 rather than crashing, so clients
 can degrade gracefully.
 """
+
 from __future__ import annotations
 
 import logging

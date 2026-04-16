@@ -62,7 +62,9 @@ def write_yaml(path: str | Path, data: Any) -> None:
     path = Path(path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(
-        prefix=path.name + ".", suffix=".tmp", dir=str(path.parent),
+        prefix=path.name + ".",
+        suffix=".tmp",
+        dir=str(path.parent),
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -121,5 +123,9 @@ def _deep_set(target: dict, keys: list[str], value: Any) -> None:
 
 
 __all__ = [
-    "MASK", "is_secret_field", "load_yaml", "write_yaml", "update_section",
+    "MASK",
+    "is_secret_field",
+    "load_yaml",
+    "write_yaml",
+    "update_section",
 ]

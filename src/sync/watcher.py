@@ -64,9 +64,7 @@ class RealtimeWatcher:
             logger.info("Real-time watcher connected")
 
             # Start ping task
-            ping_task = asyncio.create_task(
-                self._ping_loop(ws, self._ws_config.ping_interval)
-            )
+            ping_task = asyncio.create_task(self._ping_loop(ws, self._ws_config.ping_interval))
 
             try:
                 while self._running and ws.connected:
@@ -81,12 +79,16 @@ class RealtimeWatcher:
 
                     logger.info(
                         "Event: %s %s (%s)",
-                        event.event_type, event.name or event.doc_id[:8], event.doc_type,
+                        event.event_type,
+                        event.name or event.doc_id[:8],
+                        event.doc_type,
                     )
 
                     if event.event_type in ("DocAdded", "DocChanged"):
                         await self._handle_document_change(
-                            event, cloud, ocr_pipeline,
+                            event,
+                            cloud,
+                            ocr_pipeline,
                         )
                     elif event.event_type == "DocDeleted":
                         logger.info("Document deleted: %s", event.doc_id[:8])
@@ -120,7 +122,9 @@ class RealtimeWatcher:
         if result.success:
             logger.info(
                 "Processed %s: %d pages, %d actions",
-                result.doc_name, result.page_count, result.action_count,
+                result.doc_name,
+                result.page_count,
+                result.action_count,
             )
         else:
             logger.warning("Failed to process %s: %s", result.doc_name, result.error)

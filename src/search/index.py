@@ -107,7 +107,8 @@ class VectorIndex:
                         logger.warning(
                             "Existing embeddings have dimension %d, expected %d. "
                             "Rebuilding index. Run `remark-bridge reindex` to populate.",
-                            stored_dim, self._dimension,
+                            stored_dim,
+                            self._dimension,
                         )
                         self.conn.execute("DROP TABLE vault_embeddings")
                         self.conn.execute("DELETE FROM vault_chunks")
@@ -133,9 +134,7 @@ class VectorIndex:
     ) -> None:
         """Insert or replace all chunks for a document."""
         if len(chunks) != len(embeddings):
-            raise ValueError(
-                f"chunk/embedding count mismatch: {len(chunks)} vs {len(embeddings)}"
-            )
+            raise ValueError(f"chunk/embedding count mismatch: {len(chunks)} vs {len(embeddings)}")
 
         self.remove_document(doc_id)
 
@@ -151,8 +150,14 @@ class VectorIndex:
                 """INSERT INTO vault_chunks
                    (doc_id, vault_path, chunk_index, content, heading_path, content_hash)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (doc_id, vault_path, chunk.index, chunk.content,
-                 json.dumps(chunk.heading_path), content_hash),
+                (
+                    doc_id,
+                    vault_path,
+                    chunk.index,
+                    chunk.content,
+                    json.dumps(chunk.heading_path),
+                    content_hash,
+                ),
             )
             chunk_id = cursor.lastrowid
 
@@ -165,8 +170,7 @@ class VectorIndex:
             # Full-text row — rowid == chunk_id so we can rejoin cleanly.
             heading_flat = " › ".join(chunk.heading_path) if chunk.heading_path else ""
             self.conn.execute(
-                "INSERT INTO vault_chunks_fts (rowid, content, heading) "
-                "VALUES (?, ?, ?)",
+                "INSERT INTO vault_chunks_fts (rowid, content, heading) VALUES (?, ?, ?)",
                 (chunk_id, chunk.content, heading_flat),
             )
 
@@ -176,7 +180,8 @@ class VectorIndex:
     def remove_document(self, doc_id: str) -> int:
         """Remove all chunks for a document. Returns chunk count removed."""
         cur = self.conn.execute(
-            "SELECT chunk_id FROM vault_chunks WHERE doc_id = ?", (doc_id,),
+            "SELECT chunk_id FROM vault_chunks WHERE doc_id = ?",
+            (doc_id,),
         )
         chunk_ids = [row[0] for row in cur.fetchall()]
 
@@ -193,7 +198,8 @@ class VectorIndex:
             chunk_ids,
         )
         self.conn.execute(
-            "DELETE FROM vault_chunks WHERE doc_id = ?", (doc_id,),
+            "DELETE FROM vault_chunks WHERE doc_id = ?",
+            (doc_id,),
         )
         self.conn.commit()
         return len(chunk_ids)
@@ -206,9 +212,7 @@ class VectorIndex:
     ) -> list[SearchHit]:
         """Find the top-k most similar chunks to a query vector."""
         if len(query_vector) != self._dimension:
-            raise ValueError(
-                f"Query vector dim {len(query_vector)} != index dim {self._dimension}"
-            )
+            raise ValueError(f"Query vector dim {len(query_vector)} != index dim {self._dimension}")
 
         packed = _pack_vector(query_vector)
 
@@ -297,16 +301,18 @@ class VectorIndex:
             # for the optional ``min_score`` floor.
             raw = row["bm25_rank"]
             normalized = max(0.0, min(1.0, -raw / 10.0)) if raw is not None else 0.0
-            hits.append(SearchHit(
-                chunk_id=row["chunk_id"],
-                doc_id=row["doc_id"],
-                vault_path=row["vault_path"],
-                content=row["content"],
-                heading_path=json.loads(row["heading_path"]),
-                # Re-use the cosine-distance slot: 2*(1-sim) keeps
-                # ``SearchHit.score`` monotonic with relevance.
-                distance=2.0 * (1.0 - normalized),
-            ))
+            hits.append(
+                SearchHit(
+                    chunk_id=row["chunk_id"],
+                    doc_id=row["doc_id"],
+                    vault_path=row["vault_path"],
+                    content=row["content"],
+                    heading_path=json.loads(row["heading_path"]),
+                    # Re-use the cosine-distance slot: 2*(1-sim) keeps
+                    # ``SearchHit.score`` monotonic with relevance.
+                    distance=2.0 * (1.0 - normalized),
+                )
+            )
         return hits
 
     def clear(self) -> None:
@@ -330,4 +336,5 @@ def _pack_vector(vector: list[float]) -> bytes:
 def _hash(text: str) -> str:
     """Short hash of chunk content for change detection."""
     import hashlib
+
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]

@@ -4,6 +4,7 @@ Delegates vision inference to whatever LLMClient is configured
 (Anthropic Claude, OpenAI GPT-4o, Ollama's llava, etc.). The OCR
 pipeline wires this up from config.llm.provider.
 """
+
 from __future__ import annotations
 
 import logging

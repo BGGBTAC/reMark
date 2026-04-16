@@ -54,12 +54,15 @@ def _get_auth(config: AppConfig, device_id: str = "default"):
 
 def _get_ocr_pipeline(config: AppConfig, llm_client=None):
     from src.ocr.pipeline import build_pipeline
+
     return build_pipeline(config, llm_client=llm_client)
 
 
 @click.group()
 @click.option(
-    "--config", "-c", "config_path",
+    "--config",
+    "-c",
+    "config_path",
     default=None,
     help="Path to config file (defaults to $REMARK_CONFIG or ./config.yaml)",
 )
@@ -99,6 +102,7 @@ def setup(ctx: click.Context) -> None:
     if not Path("config.yaml").exists():
         click.echo("Creating config.yaml from template...")
         import shutil
+
         shutil.copy("config.example.yaml", "config.yaml")
         click.echo("Edit config.yaml to set your vault path and preferences.\n")
     else:
@@ -106,6 +110,7 @@ def setup(ctx: click.Context) -> None:
 
     # Step 3: Vault structure
     from src.obsidian.vault import ObsidianVault
+
     vault = ObsidianVault(
         Path(config.obsidian.vault_path).expanduser(),
         config.obsidian.folder_map,
@@ -135,7 +140,9 @@ def _do_register(auth) -> None:
 
 @cli.command()
 @click.option(
-    "--device", "device_id", default="default",
+    "--device",
+    "device_id",
+    default="default",
     help="Pair a specific registered device slug (for multi-device setups)",
 )
 @click.pass_context
@@ -297,6 +304,7 @@ def status(ctx: click.Context) -> None:
 
     try:
         from src.sync.state import SyncState
+
         state = SyncState(resolve_path(config.sync.state_db))
         stats = state.get_sync_stats()
 
@@ -312,6 +320,7 @@ def status(ctx: click.Context) -> None:
         # Git status
         if config.obsidian.git.enabled:
             from src.obsidian.git_sync import GitSync
+
             git = GitSync(config.obsidian.vault_path)
             if git.is_git_repo():
                 gs = git.status()
@@ -359,7 +368,8 @@ def process(ctx: click.Context, notebook_name: str) -> None:
 @cli.command()
 @click.argument("notebook_name")
 @click.option(
-    "--format", "format_",
+    "--format",
+    "format_",
     type=click.Choice(["pdf", "notebook"]),
     default=None,
     help="Response format. Defaults to config.response.format.",
@@ -458,8 +468,9 @@ def push(ctx: click.Context, file_path: str, folder: str) -> None:
 @cli.command()
 @click.argument("query")
 @click.option("--top-k", "-k", default=5, help="Number of results to return")
-@click.option("--with-answer/--no-answer", default=True,
-              help="Synthesize a grounded answer from hits")
+@click.option(
+    "--with-answer/--no-answer", default=True, help="Synthesize a grounded answer from hits"
+)
 @click.pass_context
 def ask(ctx: click.Context, query: str, top_k: int, with_answer: bool) -> None:
     """Ask a natural-language question against your synced notes."""
@@ -541,7 +552,8 @@ async def _ask(config: AppConfig, query: str, top_k: int, with_answer: bool) -> 
 @cli.command(name="push-note")
 @click.argument("note_name")
 @click.option(
-    "--format", "format_",
+    "--format",
+    "format_",
     type=click.Choice(["pdf", "notebook"]),
     default=None,
     help="Output format. Defaults to config.reverse_sync.format.",
@@ -673,7 +685,10 @@ def template_push(ctx: click.Context, name: str, folder: str | None) -> None:
 
 
 async def _push_template(
-    config: AppConfig, name: str, pdf_bytes: bytes, target_folder: str,
+    config: AppConfig,
+    name: str,
+    pdf_bytes: bytes,
+    target_folder: str,
 ) -> None:
     from src.remarkable.cloud import RemarkableCloud
     from src.response.uploader import ResponseUploader
@@ -734,8 +749,10 @@ def plugins_disable(ctx: click.Context, name: str) -> None:
     state.register_plugin(name)
     state.set_plugin_enabled(name, False)
     state.close()
-    click.echo(f"Disabled plugin '{name}'. "
-               f"Also add it to config.plugins.disabled to persist across DB resets.")
+    click.echo(
+        f"Disabled plugin '{name}'. "
+        f"Also add it to config.plugins.disabled to persist across DB resets."
+    )
 
 
 @plugins.command("enable")
@@ -779,6 +796,7 @@ def plugins_info(ctx: click.Context, name: str) -> None:
         OCRBackendHook,
         SyncHook,
     )
+
     hooks = []
     for cls in (ActionExtractorHook, OCRBackendHook, NoteProcessorHook, SyncHook):
         if isinstance(plugin, cls):
@@ -864,7 +882,7 @@ def vapid_keys() -> None:
     click.echo("\nAdd these to config.yaml under `web:`")
     click.echo(f"  vapid_public_key: {pub}")
     click.echo(f"  vapid_private_key: {priv}")
-    click.echo("  vapid_subject: \"mailto:you@example.com\"")
+    click.echo('  vapid_subject: "mailto:you@example.com"')
     click.echo("\nKeep the private key secret.\n")
 
 
@@ -889,23 +907,28 @@ def _run_doctor(config: AppConfig) -> None:
 
     # Vault path
     vault_path = Path(config.obsidian.vault_path).expanduser()
-    checks.append((
-        "Vault directory",
-        vault_path.exists(),
-        str(vault_path) if vault_path.exists() else f"missing: {vault_path}",
-    ))
+    checks.append(
+        (
+            "Vault directory",
+            vault_path.exists(),
+            str(vault_path) if vault_path.exists() else f"missing: {vault_path}",
+        )
+    )
 
     # Vault git repo
     if config.obsidian.git.enabled:
         from src.obsidian.git_sync import GitSync
+
         try:
             gs = GitSync(str(vault_path))
             is_repo = gs.is_git_repo()
-            checks.append((
-                "Vault is git repo",
-                is_repo,
-                "ok" if is_repo else "run 'git init' in vault",
-            ))
+            checks.append(
+                (
+                    "Vault is git repo",
+                    is_repo,
+                    "ok" if is_repo else "run 'git init' in vault",
+                )
+            )
         except Exception as e:
             checks.append(("Vault is git repo", False, str(e)))
 
@@ -923,57 +946,69 @@ def _run_doctor(config: AppConfig) -> None:
         else:
             checks.append(("reMarkable device token", False, "empty file"))
     else:
-        checks.append((
-            "reMarkable device token",
-            False,
-            "run 'remark-bridge setup'",
-        ))
+        checks.append(
+            (
+                "reMarkable device token",
+                False,
+                "run 'remark-bridge setup'",
+            )
+        )
 
     # Anthropic API key
     env_var = config.processing.api_key_env
     api_key = os.environ.get(env_var, "")
-    checks.append((
-        f"Anthropic API key ({env_var})",
-        bool(api_key),
-        "set" if api_key else "not set",
-    ))
+    checks.append(
+        (
+            f"Anthropic API key ({env_var})",
+            bool(api_key),
+            "set" if api_key else "not set",
+        )
+    )
 
     # State DB
     state_db = resolve_path(config.sync.state_db)
     state_db_exists = state_db.exists() or state_db.parent.exists()
-    checks.append((
-        "State database location",
-        state_db_exists,
-        str(state_db) if state_db_exists else "parent dir missing",
-    ))
+    checks.append(
+        (
+            "State database location",
+            state_db_exists,
+            str(state_db) if state_db_exists else "parent dir missing",
+        )
+    )
 
     # Cairo
     cairo_ok = False
     try:
         import cairocffi  # noqa: F401
+
         cairo_ok = True
     except (ImportError, OSError):
         pass
-    checks.append((
-        "libcairo2 (for SVG→PNG)",
-        cairo_ok,
-        "loaded" if cairo_ok else "install libcairo2-dev",
-    ))
+    checks.append(
+        (
+            "libcairo2 (for SVG→PNG)",
+            cairo_ok,
+            "loaded" if cairo_ok else "install libcairo2-dev",
+        )
+    )
 
     # Search backend (if enabled)
     if config.search.enabled:
         try:
             from src.search.backends import build_backend
+
             backend = build_backend(
                 config.search.backend,
                 model=config.search.model,
                 api_key_env=config.search.api_key_env,
             )
-            checks.append((
-                f"Search backend '{backend.name}'",
-                True,
-                f"dim={backend.dimension}",
-            ))
+            checks.append(
+                (
+                    f"Search backend '{backend.name}'",
+                    True,
+                    f"dim={backend.dimension}",
+                )
+            )
         except Exception as e:
             checks.append((f"Search backend '{config.search.backend}'", False, str(e)))
 
@@ -984,28 +1019,34 @@ def _run_doctor(config: AppConfig) -> None:
         else:
             cache_path = Path(config.microsoft.token_cache_path).expanduser()
             if cache_path.exists():
-                checks.append((
-                    "Microsoft token cache",
-                    True,
-                    str(cache_path),
-                ))
+                checks.append(
+                    (
+                        "Microsoft token cache",
+                        True,
+                        str(cache_path),
+                    )
+                )
             else:
-                checks.append((
-                    "Microsoft token cache",
-                    False,
-                    "run 'remark-bridge setup-microsoft'",
-                ))
+                checks.append(
+                    (
+                        "Microsoft token cache",
+                        False,
+                        "run 'remark-bridge setup-microsoft'",
+                    )
+                )
 
     # Disk space
     vault_parent = vault_path.parent if vault_path.exists() else vault_path.parent.parent
     if vault_parent.exists():
         free_bytes = shutil.disk_usage(vault_parent).free
-        free_gb = free_bytes / (1024 ** 3)
-        checks.append((
-            "Free disk space",
-            free_gb > 1.0,
-            f"{free_gb:.1f} GB free",
-        ))
+        free_gb = free_bytes / (1024**3)
+        checks.append(
+            (
+                "Free disk space",
+                free_gb > 1.0,
+                f"{free_gb:.1f} GB free",
+            )
+        )
 
     # Print report
     click.echo("\n=== reMark Doctor ===\n")
@@ -1033,6 +1074,7 @@ def _run_doctor(config: AppConfig) -> None:
 def _version() -> str:
     try:
         from importlib.metadata import version
+
         return version("remark-bridge")
     except Exception:
         return "dev"
@@ -1138,8 +1180,12 @@ async def _reindex(config: AppConfig) -> None:
 
 
 @cli.command("bench")
-@click.option("--chunks", default=1000, show_default=True, help="How many synthetic chunks to embed.")
-@click.option("--stub", is_flag=True, help="Use a zero-latency stub backend instead of the real one.")
+@click.option(
+    "--chunks", default=1000, show_default=True, help="How many synthetic chunks to embed."
+)
+@click.option(
+    "--stub", is_flag=True, help="Use a zero-latency stub backend instead of the real one."
+)
 def bench_cmd(chunks: int, stub: bool) -> None:
     """Micro-benchmark: embed N synthetic chunks and report throughput.
 
@@ -1162,6 +1208,7 @@ def bench_cmd(chunks: int, stub: bool) -> None:
             backend: object = _Stub()
         else:
             from src.search.backends import build_backend
+
             backend = build_backend("local")
 
         texts = [f"chunk {i} " * 20 for i in range(chunks)]
@@ -1208,6 +1255,7 @@ def serve(ctx: click.Context) -> None:
     click.echo("Starting MCP server on stdio...")
 
     from src.mcp.server import run_server
+
     asyncio.run(run_server())
 
 
@@ -1244,11 +1292,14 @@ async def _migrate_all(config: AppConfig) -> None:
 
 @cli.command("retag")
 @click.option(
-    "--dry-run", is_flag=True,
+    "--dry-run",
+    is_flag=True,
     help="Show what would change without writing",
 )
 @click.option(
-    "--limit", type=int, default=None,
+    "--limit",
+    type=int,
+    default=None,
     help="Only process the first N notes (useful for testing)",
 )
 @click.pass_context
@@ -1302,10 +1353,7 @@ async def _retag(config: AppConfig, dry_run: bool, limit: int | None) -> None:
         if new_tags == old_tags:
             continue
 
-        click.echo(
-            f"  {note_path.relative_to(vault.path)}: "
-            f"{len(old_tags)} → {len(new_tags)} tags"
-        )
+        click.echo(f"  {note_path.relative_to(vault.path)}: {len(old_tags)} → {len(new_tags)} tags")
         if dry_run:
             continue
 
@@ -1405,7 +1453,10 @@ def audit_list(
     state = SyncState(resolve_path(config.sync.state_db))
     try:
         rows = state.list_audit(
-            limit=limit, offset=offset, user_id=user_id, action=action,
+            limit=limit,
+            offset=offset,
+            user_id=user_id,
+            action=action,
         )
     finally:
         state.close()
@@ -1422,7 +1473,9 @@ def audit_list(
 
 @audit.command("prune")
 @click.option(
-    "--days", default=90, type=int,
+    "--days",
+    default=90,
+    type=int,
     help="Retention window — entries older than this many days are deleted",
 )
 @click.confirmation_option(prompt="Delete old audit entries?")
@@ -1485,10 +1538,7 @@ def bridge_token_list(ctx: click.Context) -> None:
     for row in rows:
         status = "revoked" if row["revoked"] else "active"
         last = row.get("last_used_at") or "never"
-        click.echo(
-            f"  [{row['id']:>3}] {row['label']:<32} "
-            f"[{status}]  last_used={last}"
-        )
+        click.echo(f"  [{row['id']:>3}] {row['label']:<32} [{status}]  last_used={last}")
 
 
 @bridge_token.command("revoke")
@@ -1557,7 +1607,8 @@ def queue_retry(ctx: click.Context, queue_id: int) -> None:
 
 @queue.command("clear")
 @click.option(
-    "--status", default=None,
+    "--status",
+    default=None,
     help="Only delete entries with this status (omit to clear all)",
 )
 @click.confirmation_option(prompt="Really delete queue entries?")
@@ -1584,13 +1635,15 @@ def device() -> None:
 @click.option("--id", "device_id", required=True, help="Stable slug, e.g. 'pro' or 'rm2'")
 @click.option("--label", required=True, help="Human-readable name for the tablet")
 @click.option(
-    "--subfolder", default="",
+    "--subfolder",
+    default="",
     help="Subfolder under the vault to write this device's notes into",
 )
 @click.option(
-    "--code", default=None,
+    "--code",
+    default=None,
     help="One-time pairing code from my.remarkable.com — optional, run without "
-         "to register later with `remark-bridge auth --device <id>`",
+    "to register later with `remark-bridge auth --device <id>`",
 )
 @click.pass_context
 def device_add(

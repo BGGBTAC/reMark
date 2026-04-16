@@ -1,9 +1,8 @@
 """Verify auth and SyncEngine are wired to the shared pool."""
+
 from __future__ import annotations
 
 import inspect
-
-import pytest
 
 from src.http_pool import SharedHttpPool
 
@@ -34,7 +33,7 @@ async def test_sync_engine_owns_pool():
 
 async def test_auth_pool_routes_request(monkeypatch, tmp_path):
     """When http_pool is provided, AuthManager._refresh_user_token uses it."""
-    from src.remarkable.auth import AuthError, AuthManager
+    from src.remarkable.auth import AuthManager
 
     posts: list[str] = []
 

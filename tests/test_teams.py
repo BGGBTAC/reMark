@@ -35,6 +35,7 @@ def state(tmp_path):
 # build_digest
 # =====================
 
+
 class TestBuildDigest:
     def test_empty_vault(self, state, vault):
         digest = build_digest(state, vault, period="weekly")
@@ -44,9 +45,14 @@ class TestBuildDigest:
 
     def test_counts_synced_notes(self, state, vault):
         state.mark_synced(
-            doc_id="d1", doc_name="Note 1", parent_folder="",
-            cloud_hash="h", vault_path="/v/n.md", ocr_engine="crdt",
-            page_count=3, action_count=2,
+            doc_id="d1",
+            doc_name="Note 1",
+            parent_folder="",
+            cloud_hash="h",
+            vault_path="/v/n.md",
+            ocr_engine="crdt",
+            page_count=3,
+            action_count=2,
         )
         digest = build_digest(state, vault, period="weekly")
         assert digest.notes_count == 1
@@ -83,8 +89,12 @@ class TestBuildDigest:
 
     def test_cost_in_digest(self, state, vault):
         state.log_api_usage(
-            provider="anthropic", model="claude-sonnet-4-20250514",
-            operation="structure", input_tokens=500, output_tokens=100, cost_usd=0.025,
+            provider="anthropic",
+            model="claude-sonnet-4-20250514",
+            operation="structure",
+            input_tokens=500,
+            output_tokens=100,
+            cost_usd=0.025,
         )
         digest = build_digest(state, vault, period="weekly")
         assert digest.cost_usd == pytest.approx(0.025, rel=1e-3)
@@ -93,6 +103,7 @@ class TestBuildDigest:
 # =====================
 # render_adaptive_card
 # =====================
+
 
 class TestAdaptiveCard:
     def test_basic_structure(self):
@@ -129,9 +140,11 @@ class TestAdaptiveCard:
 
     def test_action_items_rendered(self):
         d = DigestData(
-            period="weekly", notes_count=1,
+            period="weekly",
+            notes_count=1,
             action_items=[{"text": "Ship feature", "source": "Sprint"}],
-            top_tags=[], cost_usd=0.0,
+            top_tags=[],
+            cost_usd=0.0,
             date_range="...",
         )
         card = render_adaptive_card(d)
@@ -143,13 +156,18 @@ class TestAdaptiveCard:
 # post_digest
 # =====================
 
+
 class TestPostDigest:
     @pytest.mark.asyncio
     async def test_disabled_skips(self):
         cfg = TeamsConfig(enabled=False, webhook_url="")
         d = DigestData(
-            period="daily", notes_count=0, action_items=[],
-            top_tags=[], cost_usd=0.0, date_range="",
+            period="daily",
+            notes_count=0,
+            action_items=[],
+            top_tags=[],
+            cost_usd=0.0,
+            date_range="",
         )
         result = await post_digest(cfg, d)
         assert result is False
@@ -204,6 +222,7 @@ class TestPostDigest:
 # send_card (shared pool)
 # =====================
 
+
 class TestSendCard:
     @pytest.mark.asyncio
     async def test_teams_webhook_can_use_shared_pool(self):
@@ -212,11 +231,16 @@ class TestSendCard:
 
         class _FakeClient:
             is_closed = False
+
             async def post(self, url, json):
                 posts.append((url, json))
+
                 class _R:
                     status_code = 200
-                    def raise_for_status(self): pass
+
+                    def raise_for_status(self):
+                        pass
+
                 return _R()
 
         async def _fake_client():
@@ -256,6 +280,7 @@ class TestSendCard:
 # correlate_meetings
 # =====================
 
+
 class TestCorrelateMeetings:
     @pytest.mark.asyncio
     async def test_correlates_by_title(self, vault):
@@ -267,14 +292,17 @@ class TestCorrelateMeetings:
         )
 
         graph = MagicMock()
-        graph.get = AsyncMock(return_value={
-            "value": [
-                {"subject": "Weekly Standup - April",
-                 "start": {"dateTime": "2026-04-15T09:00:00"}},
-                {"subject": "Unrelated meeting",
-                 "start": {"dateTime": "2026-04-15T11:00:00"}},
-            ],
-        })
+        graph.get = AsyncMock(
+            return_value={
+                "value": [
+                    {
+                        "subject": "Weekly Standup - April",
+                        "start": {"dateTime": "2026-04-15T09:00:00"},
+                    },
+                    {"subject": "Unrelated meeting", "start": {"dateTime": "2026-04-15T11:00:00"}},
+                ],
+            }
+        )
 
         matches = await correlate_meetings(graph, vault)
         assert len(matches) == 1

@@ -52,36 +52,62 @@ Example: [
 # Keyword patterns for common note types
 KEYWORD_TAGS: dict[str, list[str]] = {
     "meeting": [
-        r"\bmeeting\b", r"\battendees?\b", r"\bagenda\b",
-        r"\bminutes\b", r"\bstandup\b", r"\bsync\b",
+        r"\bmeeting\b",
+        r"\battendees?\b",
+        r"\bagenda\b",
+        r"\bminutes\b",
+        r"\bstandup\b",
+        r"\bsync\b",
     ],
     "brainstorm": [
-        r"\bbrainstorm\b", r"\bideas?\b", r"\bwhat if\b",
+        r"\bbrainstorm\b",
+        r"\bideas?\b",
+        r"\bwhat if\b",
         r"\bconcepts?\b",
     ],
     "planning": [
-        r"\btimeline\b", r"\bdeadline\b", r"\bmilestone\b",
-        r"\broadmap\b", r"\bsprint\b", r"\bplan\b",
+        r"\btimeline\b",
+        r"\bdeadline\b",
+        r"\bmilestone\b",
+        r"\broadmap\b",
+        r"\bsprint\b",
+        r"\bplan\b",
     ],
     "review": [
-        r"\breview\b", r"\bfeedback\b", r"\bretro\b",
-        r"\bretrospective\b", r"\blessons learned\b",
+        r"\breview\b",
+        r"\bfeedback\b",
+        r"\bretro\b",
+        r"\bretrospective\b",
+        r"\blessons learned\b",
     ],
     "journal": [
-        r"\btoday\b.*\bI\b", r"\bfeeling\b", r"\breflect\b",
-        r"\bjournal\b", r"\bdiary\b",
+        r"\btoday\b.*\bI\b",
+        r"\bfeeling\b",
+        r"\breflect\b",
+        r"\bjournal\b",
+        r"\bdiary\b",
     ],
     "research": [
-        r"\bsource\b", r"\breference\b", r"\bstudy\b",
-        r"\bpaper\b", r"\bfindings?\b",
+        r"\bsource\b",
+        r"\breference\b",
+        r"\bstudy\b",
+        r"\bpaper\b",
+        r"\bfindings?\b",
     ],
     "technical": [
-        r"\bapi\b", r"\bdatabase\b", r"\bserver\b",
-        r"\bdeployment\b", r"\bbug\b", r"\bconfig\b",
+        r"\bapi\b",
+        r"\bdatabase\b",
+        r"\bserver\b",
+        r"\bdeployment\b",
+        r"\bbug\b",
+        r"\bconfig\b",
     ],
     "reading-notes": [
-        r"\bchapter\b", r"\bauthor\b", r"\bbook\b",
-        r"\bquote\b", r"\bpage\s*\d+",
+        r"\bchapter\b",
+        r"\bauthor\b",
+        r"\bbook\b",
+        r"\bquote\b",
+        r"\bpage\s*\d+",
     ],
 }
 
@@ -131,11 +157,7 @@ class NoteTagger:
         """Use the configured LLM to generate contextual tags."""
         try:
             context = f"Notebook: {notebook_name}\n\n" if notebook_name else ""
-            system = (
-                HIERARCHICAL_TAGGING_PROMPT
-                if self._hierarchical
-                else TAGGING_PROMPT
-            )
+            system = HIERARCHICAL_TAGGING_PROMPT if self._hierarchical else TAGGING_PROMPT
             response = await self._llm.complete(
                 system=system,
                 messages=[LLMMessage(role="user", content=f"{context}{text[:2000]}")],

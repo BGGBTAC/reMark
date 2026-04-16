@@ -73,7 +73,8 @@ class TestHybrid:
     async def test_hybrid_surfaces_exact_keyword_hit(self, populated_index):
         """With semantic scores tied, BM25 should drive the hybrid result."""
         searcher = SearchQuery(
-            backend=_StaticEmbedding(dim=4), index=populated_index,
+            backend=_StaticEmbedding(dim=4),
+            index=populated_index,
         )
         result = await searcher.ask(
             "reMarkable device token",
@@ -103,7 +104,10 @@ class TestHybrid:
 
         searcher = SearchQuery(backend=ExplodingBackend(), index=populated_index)
         result = await searcher.ask(
-            "matcha powder", top_k=1, min_score=0.0, mode="bm25",
+            "matcha powder",
+            top_k=1,
+            min_score=0.0,
+            mode="bm25",
         )
         assert result.hits and result.hits[0].doc_id == "doc-tea"
 

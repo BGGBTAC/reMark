@@ -100,21 +100,24 @@ class MicrosoftService:
                         except Exception as e:
                             logger.warning(
                                 "Failed to create task for '%s': %s",
-                                action.task[:40], e,
+                                action.task[:40],
+                                e,
                             )
                             result.errors.append(str(e))
 
                     if calendar_client and action.deadline:
                         try:
                             event_id = await calendar_client.create_deadline_event(
-                                action, source_note,
+                                action,
+                                source_note,
                             )
                             if event_id:
                                 result.events_created.append(event_id)
                         except Exception as e:
                             logger.warning(
                                 "Failed to create event for '%s': %s",
-                                action.task[:40], e,
+                                action.task[:40],
+                                e,
                             )
                             result.errors.append(str(e))
 

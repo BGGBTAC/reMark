@@ -31,8 +31,7 @@ class EmbeddingBackend(ABC):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @property
     @abstractmethod
@@ -69,6 +68,7 @@ class VoyageBackend(EmbeddingBackend):
         if self._client is None:
             try:
                 import voyageai
+
                 self._client = voyageai.AsyncClient(api_key=self._api_key)
             except ImportError as e:
                 raise EmbeddingError(
@@ -108,6 +108,7 @@ class OpenAIBackend(EmbeddingBackend):
         if self._client is None:
             try:
                 from openai import AsyncOpenAI
+
                 self._client = AsyncOpenAI(api_key=self._api_key)
             except ImportError as e:
                 raise EmbeddingError(
@@ -149,6 +150,7 @@ class LocalBackend(EmbeddingBackend):
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
+
                 self._model = SentenceTransformer(self._model_name)
                 self._dimension = self._model.get_sentence_embedding_dimension()
             except ImportError as e:
@@ -163,7 +165,8 @@ class LocalBackend(EmbeddingBackend):
             # sentence-transformers is sync, run in executor
             loop = asyncio.get_event_loop()
             vectors = await loop.run_in_executor(
-                None, lambda: self._model.encode(texts, convert_to_numpy=False),
+                None,
+                lambda: self._model.encode(texts, convert_to_numpy=False),
             )
             # Convert torch tensors / numpy arrays to lists of floats
             return [list(map(float, v)) for v in vectors]
@@ -219,6 +222,7 @@ class OllamaEmbeddingBackend(EmbeddingBackend):
             return []
         if self._http is None:
             import httpx
+
             self._http = httpx.AsyncClient(timeout=120.0)
         results: list[list[float]] = []
         for text in texts:
@@ -241,18 +245,14 @@ def build_backend(
         env_var = api_key_env or "VOYAGE_API_KEY"
         api_key = os.environ.get(env_var, "")
         if not api_key:
-            raise EmbeddingError(
-                f"Voyage backend requires {env_var} environment variable"
-            )
+            raise EmbeddingError(f"Voyage backend requires {env_var} environment variable")
         return VoyageBackend(api_key=api_key, model=model)
 
     if backend_name == "openai":
         env_var = api_key_env or "OPENAI_API_KEY"
         api_key = os.environ.get(env_var, "")
         if not api_key:
-            raise EmbeddingError(
-                f"OpenAI backend requires {env_var} environment variable"
-            )
+            raise EmbeddingError(f"OpenAI backend requires {env_var} environment variable")
         return OpenAIBackend(api_key=api_key, model=model)
 
     if backend_name == "local":

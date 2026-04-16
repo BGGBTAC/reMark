@@ -81,6 +81,7 @@ def _detect_device(notebook: Notebook) -> str:
         for line in page.lines:
             if hasattr(line, "color"):
                 from rmscene.scene_items import PenColor
+
                 if line.color not in (PenColor.BLACK, PenColor.GRAY, PenColor.WHITE):
                     return "paper-pro"
 

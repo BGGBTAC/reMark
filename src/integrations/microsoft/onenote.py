@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class OneNotePage:
     """Summary of a created or fetched OneNote page."""
+
     id: str
     title: str
     section_id: str
@@ -53,7 +54,8 @@ class OneNoteClient:
         self._notebook_id = created["id"]
         logger.info(
             "Created OneNote notebook '%s' (%s)",
-            self._config.notebook_name, self._notebook_id[:8],
+            self._config.notebook_name,
+            self._notebook_id[:8],
         )
         return self._notebook_id
 
@@ -112,9 +114,7 @@ class OneNoteClient:
             },
         )
         if resp.status_code >= 400:
-            raise GraphError(
-                f"OneNote page creation failed: {resp.status_code} {resp.text[:200]}"
-            )
+            raise GraphError(f"OneNote page creation failed: {resp.status_code} {resp.text[:200]}")
 
         data = resp.json()
         page = OneNotePage(
@@ -178,9 +178,7 @@ def _markdown_to_onenote_html(title: str, markdown: str, tags: list[str]) -> str
                 body_parts.append("</ul>")
                 in_list = False
             level = min(len(h.group(1)), 6)
-            body_parts.append(
-                f"<h{level}>{_inline_format(h.group(2))}</h{level}>"
-            )
+            body_parts.append(f"<h{level}>{_inline_format(h.group(2))}</h{level}>")
             continue
 
         # Checkbox
@@ -191,9 +189,7 @@ def _markdown_to_onenote_html(title: str, markdown: str, tags: list[str]) -> str
                 in_list = True
             checked = "checked" if cb.group(1).lower() == "x" else ""
             body_parts.append(
-                f'<li>'
-                f'<input type="checkbox" {checked} disabled> '
-                f'{_inline_format(cb.group(2))}</li>'
+                f'<li><input type="checkbox" {checked} disabled> {_inline_format(cb.group(2))}</li>'
             )
             continue
 
@@ -218,7 +214,7 @@ def _markdown_to_onenote_html(title: str, markdown: str, tags: list[str]) -> str
     tag_meta = ""
     if tags:
         tag_str = ", ".join(html.escape(t) for t in tags)
-        tag_meta = f'<p><em>Tags: {tag_str}</em></p>'
+        tag_meta = f"<p><em>Tags: {tag_str}</em></p>"
 
     body = "\n".join(body_parts)
     return (
@@ -235,7 +231,7 @@ def _inline_format(text: str) -> str:
     escaped = _BOLD_RE.sub(r"<strong>\1</strong>", escaped)
     escaped = _ITALIC_RE.sub(r"<em>\1</em>", escaped)
     escaped = _WIKI_LINK_RE.sub(
-        lambda m: f"<span title=\"wiki-link\">[{m.group(1)}]</span>",
+        lambda m: f'<span title="wiki-link">[{m.group(1)}]</span>',
         escaped,
     )
     return escaped

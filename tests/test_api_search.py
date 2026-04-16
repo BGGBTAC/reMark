@@ -1,18 +1,18 @@
 """Bridge API: POST /api/search."""
+
 from __future__ import annotations
 
 import pytest
-import yaml
 from fastapi.testclient import TestClient
 
 from src.config import AppConfig
 from src.sync.state import SyncState
 from src.web.app import create_app
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def bridge_token(tmp_path):
@@ -40,16 +40,20 @@ class _FakeSearchQuery:
 
         # Return up to min(top_k, 3) canned hits so limit enforcement is testable.
         n = min(top_k, 3)
-        return type("R", (), {
-            "hits": [
-                _Hit(
-                    vault_path=f"{query}-{i}.md",
-                    content="...matcha powder and oat milk...",
-                    distance=i * 0.1,
-                )
-                for i in range(n)
-            ],
-        })()
+        return type(
+            "R",
+            (),
+            {
+                "hits": [
+                    _Hit(
+                        vault_path=f"{query}-{i}.md",
+                        content="...matcha powder and oat milk...",
+                        distance=i * 0.1,
+                    )
+                    for i in range(n)
+                ],
+            },
+        )()
 
 
 @pytest.fixture
@@ -79,6 +83,7 @@ def bridge_client_with_search(tmp_path, bridge_token):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestApiSearch:
     def test_returns_hits(self, bridge_client_with_search):

@@ -77,8 +77,7 @@ def next_run(schedule: str, reference: datetime) -> datetime:
         return candidate
 
     raise ValueError(
-        f"Unknown schedule '{schedule}'. "
-        "Expected 'every 30m', 'daily 09:00', 'weekly mon 09:00'."
+        f"Unknown schedule '{schedule}'. Expected 'every 30m', 'daily 09:00', 'weekly mon 09:00'."
     )
 
 
@@ -119,6 +118,7 @@ class ReportScheduler:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ReportScheduler tick failed: %s", exc)
             import contextlib
+
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._stopped.wait(), timeout=self._tick)
 
@@ -139,7 +139,8 @@ class ReportScheduler:
                     last_status=("ok" if result.ok else "partial"),
                     last_error=(
                         "; ".join(f"{c}: {e}" for c, e in result.channels_failed)
-                        if result.channels_failed else None
+                        if result.channels_failed
+                        else None
                     ),
                 )
             except Exception as exc:  # noqa: BLE001

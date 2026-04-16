@@ -67,9 +67,7 @@ class NotebookWriter:
         logger.info("Generated notebook '%s' (%s, 1 page)", title, doc_id[:8])
         return files
 
-    def generate_multipage(
-        self, title: str, pages: list[str]
-    ) -> dict[str, bytes]:
+    def generate_multipage(self, title: str, pages: list[str]) -> dict[str, bytes]:
         """Generate a multi-page notebook.
 
         Args:
@@ -107,7 +105,9 @@ class NotebookWriter:
 
         logger.info(
             "Generated notebook '%s' (%s, %d pages)",
-            title, doc_id[:8], len(pages),
+            title,
+            doc_id[:8],
+            len(pages),
         )
         return files
 

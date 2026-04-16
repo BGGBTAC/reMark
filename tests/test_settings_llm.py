@@ -1,12 +1,17 @@
 """/settings/llm renders a form with provider select + Ollama fields."""
+
 from __future__ import annotations
 
 import pytest
 
+from src.config import AppConfig
+
 _WEB_SKIP_REASON = ""
 try:
     from fastapi.testclient import TestClient
+
     from src.web.app import create_app
+
     _WEB_AVAILABLE = True
 except ModuleNotFoundError as _e:
     # itsdangerous or another optional web dep missing in this test env.
@@ -14,11 +19,9 @@ except ModuleNotFoundError as _e:
     _WEB_AVAILABLE = False
     _WEB_SKIP_REASON = f"web deps unavailable: {_e}"
 
-from src.config import AppConfig
-
-
 pytestmark = pytest.mark.skipif(
-    not _WEB_AVAILABLE, reason=_WEB_SKIP_REASON if not _WEB_AVAILABLE else "",
+    not _WEB_AVAILABLE,
+    reason=_WEB_SKIP_REASON if not _WEB_AVAILABLE else "",
 )
 
 

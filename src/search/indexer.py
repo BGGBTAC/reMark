@@ -144,7 +144,8 @@ class Indexer:
         indexed_docs = len(pending)
         logger.info(
             "Reindexed vault: %d notes, %d chunks",
-            indexed_docs, total,
+            indexed_docs,
+            total,
         )
 
         return {

@@ -1,6 +1,5 @@
 """Tests for the on-device template engine."""
 
-
 import pytest
 import yaml
 
@@ -17,6 +16,7 @@ from src.templates.engine import (
 # _parse_template
 # =====================
 
+
 class TestParseTemplate:
     def test_minimal(self):
         t = _parse_template({"name": "t", "fields": []})
@@ -25,31 +25,40 @@ class TestParseTemplate:
         assert t.fields == []
 
     def test_with_fields(self):
-        t = _parse_template({
-            "name": "meeting",
-            "description": "Meeting notes",
-            "fields": [
-                {"name": "date", "heading": "Date", "type": "date"},
-                {"name": "actions", "heading": "Actions",
-                 "type": "checklist", "required": True},
-            ],
-        })
+        t = _parse_template(
+            {
+                "name": "meeting",
+                "description": "Meeting notes",
+                "fields": [
+                    {"name": "date", "heading": "Date", "type": "date"},
+                    {
+                        "name": "actions",
+                        "heading": "Actions",
+                        "type": "checklist",
+                        "required": True,
+                    },
+                ],
+            }
+        )
         assert len(t.fields) == 2
         assert t.fields[0].type == "date"
         assert t.fields[1].type == "checklist"
         assert t.fields[1].required
 
     def test_default_heading(self):
-        t = _parse_template({
-            "name": "x",
-            "fields": [{"name": "agenda"}],
-        })
+        t = _parse_template(
+            {
+                "name": "x",
+                "fields": [{"name": "agenda"}],
+            }
+        )
         assert t.fields[0].heading == "Agenda"
 
 
 # =====================
 # TemplateEngine
 # =====================
+
 
 class TestTemplateEngine:
     def test_loads_builtins(self, tmp_path):
@@ -62,11 +71,15 @@ class TestTemplateEngine:
     def test_user_template_overrides(self, tmp_path):
         user_dir = tmp_path / "templates"
         user_dir.mkdir()
-        (user_dir / "custom.yaml").write_text(yaml.dump({
-            "name": "custom",
-            "description": "User-defined",
-            "fields": [{"name": "note", "heading": "Note"}],
-        }))
+        (user_dir / "custom.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "custom",
+                    "description": "User-defined",
+                    "fields": [{"name": "note", "heading": "Note"}],
+                }
+            )
+        )
 
         engine = TemplateEngine(user_dir)
         custom = engine.get("custom")
@@ -145,26 +158,39 @@ class TestTemplateEngine:
 # _extract_fields low-level
 # =====================
 
+
 class TestExtractFieldsLowLevel:
     def test_empty_content(self):
-        t = Template(name="t", description="", fields=[
-            TemplateField(name="x", heading="X"),
-        ])
+        t = Template(
+            name="t",
+            description="",
+            fields=[
+                TemplateField(name="x", heading="X"),
+            ],
+        )
         assert _extract_fields(t, "") == {}
 
     def test_checklist_items_lose_marker(self):
-        t = Template(name="t", description="", fields=[
-            TemplateField(name="tasks", heading="Tasks", type="checklist"),
-        ])
+        t = Template(
+            name="t",
+            description="",
+            fields=[
+                TemplateField(name="tasks", heading="Tasks", type="checklist"),
+            ],
+        )
         content = "# Tasks\n\n- [ ] Alpha\n- [ ] Beta\n"
         result = _extract_fields(t, content)
         # Items contain the "[ ]" notation; we just strip leading bullets/stars
         assert len(result["tasks"]) == 2
 
     def test_date_keeps_first_line(self):
-        t = Template(name="t", description="", fields=[
-            TemplateField(name="d", heading="Date", type="date"),
-        ])
+        t = Template(
+            name="t",
+            description="",
+            fields=[
+                TemplateField(name="d", heading="Date", type="date"),
+            ],
+        )
         content = "## Date\n\n2026-04-14\n\nExtra noise\n"
         result = _extract_fields(t, content)
         assert result["d"] == "2026-04-14"
@@ -184,6 +210,7 @@ class TestFirstHeading:
 # =====================
 # State integration
 # =====================
+
 
 class TestTemplateState:
     def test_record_and_extract_roundtrip(self, tmp_path):
