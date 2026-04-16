@@ -1117,9 +1117,20 @@ async def _reindex(config: AppConfig) -> None:
         vault=engine.vault,
         chunk_size=config.search.chunk_size,
         chunk_overlap=config.search.chunk_overlap,
+        batch_size=config.search.batch_size,
     )
 
-    report = await indexer.reindex_vault()
+    last_printed = 0
+
+    async def _progress(done: int, total: int) -> None:
+        nonlocal last_printed
+        # Emit at the start, every 50 chunks, and at the very end so
+        # operators can tell something is happening on large vaults.
+        if done == total or done - last_printed >= 50:
+            click.echo(f"[reindex] {done}/{total}", err=True)
+            last_printed = done
+
+    report = await indexer.reindex_vault(on_progress=_progress)
     click.echo(
         f"Indexed {report['notes']} notes → {report['chunks']} chunks "
         f"(backend: {report['backend']}, dim: {report['dimension']})"
