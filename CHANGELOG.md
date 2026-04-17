@@ -4,6 +4,18 @@ All notable changes to **reMark** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) and its commits group into the
 phases described in the release notes.
 
+## [0.8.1] — 2026-04-16
+
+Housekeeping patch on top of 0.8.0.
+
+### Changed
+- **Development status: Alpha → Beta.** The project has been running
+  bidirectionally against real tablets since 0.6, with multi-user,
+  scheduled reports, semantic search, and offline Ollama support all
+  covered by a 620-test suite. Beta reflects that maturity.
+- Internal doc comments rephrased to reference "the configured LLM"
+  instead of vendor-specific wording. No behavior change.
+
 ## [0.8.0] — 2026-04-16
 
 "Offline & Scale." Two themes in one release: a provider-agnostic

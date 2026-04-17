@@ -1,6 +1,6 @@
 [project]
 name = "remark-bridge"
-version = "0.8.0"
+version = "0.8.1"
 description = "Bidirectional sync between reMarkable tablets and an Obsidian knowledge base with intelligent note processing"
 readme = "README.md"
 license = "CC-BY-NC-4.0"
@@ -11,7 +11,7 @@ authors = [
 ]
 keywords = ["remarkable", "obsidian", "handwriting", "ocr", "sync"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
